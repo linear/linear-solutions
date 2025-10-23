@@ -1,0 +1,41 @@
+services:
+  linear-release-manager:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - LINEAR_API_KEY=${LINEAR_API_KEY}
+      - NGROK_AUTH_TOKEN=${NGROK_AUTH_TOKEN}
+      - NGROK_DOMAIN=${NGROK_DOMAIN}
+    volumes:
+      - ./logs:/app/logs
+      - ./ngrok.yml:/etc/ngrok.yml:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    ports:
+      - "4040:4040"  # ngrok web interface
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTH_TOKEN}
+      - NGROK_DOMAIN=${NGROK_DOMAIN}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    volumes:
+      - ./logs:/var/log/ngrok
+    command: ["http", "linear-release-manager:3000"]
+    restart: unless-stopped
+    depends_on:
+      - linear-release-manager
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  logs:
