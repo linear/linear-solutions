@@ -2,6 +2,8 @@
 
 This repository provides a single-purpose script that aligns customer attributes in Linear with data from a CSV file. The script reads customer rows, matches each by exact name to existing Linear customers, and updates selected attributes through the `customerUpdate` mutation.
 
+[Video Walkthrough](https://us02web.zoom.us/clips/share/rdV4oip-RSi7-YPecemUKg)
+
 **⚠️ Warning:** Any attribute present in the CSV will overwrite the attribute in Linear for matching customers. Double-check values before running the script.
 
 Tiers and Statuses must exist in Linear to be matched.
