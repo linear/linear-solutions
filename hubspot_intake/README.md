@@ -2,6 +2,8 @@
 
 Automatically create Linear tickets in your team's triage queue when specific HubSpot tickets are created.
 
+[Video Walkthrough](https://us02web.zoom.us/clips/share/ldegdTl1QwyrAnU7PqUGQA)
+
 ## Features
 
 - 🔄 **Automatic Sync**: Creates Linear issues when HubSpot tickets are created
