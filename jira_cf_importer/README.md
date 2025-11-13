@@ -2,6 +2,8 @@
 
 A TypeScript application that synchronizes custom fields from Jira tickets to Linear issues. The tool uses a **Linear-first approach**: it queries Linear for issues (with team and date filters), extracts Jira ticket links from their attachments, then fetches those specific Jira tickets to import custom field data.
 
+[Video Walkthrough](https://us02web.zoom.us/clips/share/VDcCpIiAQyufDifvPsFNpQ)
+
 ## Features
 
 - ✅ **Linear-First Approach**: Start with Linear's native filters for teams and timeframes
