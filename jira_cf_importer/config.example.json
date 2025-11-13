@@ -1,0 +1,29 @@
+{
+  "linear": {
+    "teamIds": ["team-id-1"],
+    "startDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "labelScope": "team",
+    "createMissingLabels": true
+  },
+  "jira": {
+    "baseUrl": "https://your-domain.atlassian.net",
+    "customFields": [
+      {
+        "fieldId": "customfield_10001",
+        "fieldName": "Environment",
+        "fieldType": "single-select"
+      },
+      {
+        "fieldId": "customfield_10002",
+        "fieldName": "Root Cause",
+        "fieldType": "text"
+      },
+      {
+        "fieldId": "customfield_10003",
+        "fieldName": "Additional Notes",
+        "fieldType": "multi-line-text"
+      }
+    ]
+  }
+}

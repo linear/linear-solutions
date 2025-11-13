@@ -1,0 +1,33 @@
+{
+  "name": "jira-linear-custom-field-importer",
+  "version": "1.0.0",
+  "description": "Import custom fields from Jira tickets to Linear issues",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "sync": "tsx src/index.ts",
+    "validate": "tsx src/validate.ts"
+  },
+  "keywords": [
+    "jira",
+    "linear",
+    "import",
+    "custom-fields"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@linear/sdk": "^30.0.0",
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
+
