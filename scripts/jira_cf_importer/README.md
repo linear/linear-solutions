@@ -15,7 +15,7 @@ A TypeScript application that synchronizes custom fields from Jira tickets to Li
 - ✅ **Optimized API Usage**: Only fetches Jira tickets that are actually linked to Linear issues
 - ✅ **TypeScript**: Type-safe with Linear's official TypeScript SDK
 
-## How It Works (New Approach!)
+## How It Works
 
 1. **Query Linear** for issues using your filters (teams, date range)
 2. **Extract Jira URLs** from Linear issue attachments
