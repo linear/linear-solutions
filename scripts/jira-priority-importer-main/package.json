@@ -1,0 +1,27 @@
+{
+  "name": "jira-priority-importer",
+  "version": "1.0.0",
+  "description": "Sync priorities from Jira issues to Linear issues",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts",
+    "dev:dry": "ts-node src/cli.ts sync --dry-run"
+  },
+  "keywords": ["jira", "linear", "priority", "sync"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@linear/sdk": "^24.0.0",
+    "jira.js": "^4.0.0",
+    "axios": "^1.6.0",
+    "commander": "^11.0.0",
+    "dotenv": "^16.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.2.0"
+  }
+}

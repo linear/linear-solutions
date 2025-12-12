@@ -1,0 +1,57 @@
+{
+  "linear": {
+    "apiKey": "your-linear-api-key-here",
+    "teamId": "UUID or Friendly Key (ABC)",
+    "fetchAttachments": true,
+    "attachmentTimeout": 5000
+  },
+  "jira": {
+    "host": "your-company.atlassian.net",
+    "email": "your-email@company.com",
+    "apiToken": "your-jira-api-token",
+    "projectKey": "ABC"
+  },
+  "matching": {
+    "_comment": "Available strategies: 'identifier' (match by Linear ID), 'attachment-url' (match by Jira URLs in Linear attachments), 'hybrid' (try identifier first, fallback to attachment-url)",
+    "_note": "When using 'attachment-url' or 'hybrid', the system will use your jira.host for precise URL matching",
+    "strategy": "attachment-url"
+  },
+  "priorityMapping": [
+    {
+      "jiraPriority": "Highest",
+      "linearPriority": 1
+    },
+    {
+      "jiraPriority": "High", 
+      "linearPriority": 2
+    },
+    {
+      "jiraPriority": "Medium",
+      "linearPriority": 3
+    },
+    {
+      "jiraPriority": "Low",
+      "linearPriority": 4
+    },
+    {
+      "jiraPriority": "Lowest",
+      "linearPriority": 4
+    }
+  ],
+  "rateLimiting": {
+    "_comment": "Rate limiting and retry configuration - all fields are optional with sensible defaults",
+    "_note": "The tool automatically detects rate limits AND network errors, retries with exponential backoff, and respects Retry-After headers",
+    "_retryBehavior": "Retries: rate limits (429), network errors (timeouts, connection failures, DNS issues). Does NOT retry: auth errors (401/403), validation errors (400/422)",
+    "maxRetries": 5,
+    "_maxRetriesNote": "Maximum number of retry attempts for transient errors (default: 5)",
+    "initialDelayMs": 1000,
+    "_initialDelayNote": "Initial delay in milliseconds before first retry (default: 1000ms = 1s)",
+    "maxDelayMs": 60000,
+    "_maxDelayNote": "Maximum delay cap in milliseconds (default: 60000ms = 60s)",
+    "delayBetweenRequestsMs": 100,
+    "_delayBetweenNote": "Minimum delay between ALL requests to prevent API spam (default: 100ms)",
+    "backoffMultiplier": 2,
+    "_backoffNote": "Exponential backoff multiplier - delay doubles each retry (default: 2)"
+  },
+  "dryRun": true
+}
