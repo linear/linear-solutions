@@ -31,11 +31,9 @@ A configurable Linear agent that protects issues from unauthorized changes. Auto
 - A Linear workspace with admin access
 - Linear API key with admin scope ([create one here](https://linear.app/settings/api))
 
-### 1. Clone and Install
+### 1. Clone/Download Repo and Install
 
 ```bash
-git clone https://github.com/your-org/linear-issue-protection-agent.git
-cd linear-issue-protection-agent
 npm install
 ```
 
