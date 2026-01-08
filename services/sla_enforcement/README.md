@@ -29,7 +29,8 @@ A configurable Linear agent that protects issues from unauthorized changes. Auto
 
 - Node.js 18 or higher
 - A Linear workspace with admin access
-- Linear API key with admin scope ([create one here](https://linear.app/settings/api))
+- Linear OAuth token or API key with admin scope ([create one here](https://linear.app/settings/api))
+    - We would highly recommend creating an OAuth app so that the messages and actions look like they're coming from an Agent as opposed to a person. e.g. "Vulnerability Protection Agent"
 
 ### 1. Clone/Download Repo and Install
 
