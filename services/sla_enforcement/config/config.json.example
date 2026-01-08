@@ -1,0 +1,43 @@
+{
+  "protectedLabels": [
+    "Vulnerability",
+    "Security Critical"
+  ],
+  "checkLabelGroups": true,
+  "protectedFields": {
+    "label": true,
+    "sla": true,
+    "priority": true
+  },
+  "allowlist": [
+    {
+      "email": "security-lead@example.com",
+      "name": "Security Team Lead"
+    },
+    {
+      "email": "admin@example.com"
+    },
+    {
+      "id": "linear-user-id-here",
+      "name": "Authorized User"
+    }
+  ],
+  "agent": {
+    "name": "Vulnerability Protection Agent",
+    "identifier": "🤖 [AGENT]"
+  },
+  "slack": {
+    "enabled": false,
+    "channelId": "C0123456789"
+  },
+  "behavior": {
+    "dryRun": false,
+    "notifyOnly": false,
+    "mentionUser": true
+  },
+  "logging": {
+    "level": "info",
+    "auditTrail": true,
+    "auditLogPath": "./logs/audit.log"
+  }
+}

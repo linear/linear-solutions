@@ -1,0 +1,100 @@
+{
+  "issueUpdate": {
+    "type": "Issue",
+    "action": "update",
+    "actor": {
+      "id": "user-123",
+      "type": "user",
+      "email": "user@example.com",
+      "name": "Test User",
+      "url": "https://linear.app/myworkspace/profiles/user-123"
+    },
+    "data": {
+      "id": "issue-123",
+      "identifier": "SEC-123",
+      "title": "Critical security vulnerability",
+      "labels": [],
+      "slaType": null,
+      "slaStartedAt": null,
+      "slaMediumRiskAt": null,
+      "slaHighRiskAt": null,
+      "slaBreachesAt": null
+    },
+    "updatedFrom": {
+      "labels": [
+        {
+          "id": "label-1",
+          "name": "Vulnerability"
+        }
+      ]
+    },
+    "createdAt": "2025-12-22T10:00:00.000Z",
+    "url": "https://linear.app/myworkspace/issue/SEC-123",
+    "webhookTimestamp": 1703260800000,
+    "webhookId": "webhook-123",
+    "organizationId": "org-123"
+  },
+  "issueSLA": {
+    "type": "IssueSLA",
+    "action": "set",
+    "actor": {
+      "id": "user-456",
+      "type": "user",
+      "email": "user@example.com",
+      "name": "Test User",
+      "url": "https://linear.app/myworkspace/profiles/user-456"
+    },
+    "issueData": {
+      "id": "issue-456",
+      "identifier": "SEC-456",
+      "title": "Security issue with SLA",
+      "labels": [
+        {
+          "id": "label-1",
+          "name": "Vulnerability"
+        }
+      ],
+      "slaType": "P0",
+      "slaStartedAt": "2025-12-22T10:00:00.000Z",
+      "slaMediumRiskAt": "2025-12-22T12:00:00.000Z",
+      "slaHighRiskAt": "2025-12-22T14:00:00.000Z",
+      "slaBreachesAt": "2025-12-22T16:00:00.000Z"
+    },
+    "createdAt": "2025-12-22T10:00:00.000Z",
+    "url": "https://linear.app/myworkspace/issue/SEC-456",
+    "webhookTimestamp": 1703260800000,
+    "webhookId": "webhook-456",
+    "organizationId": "org-123"
+  },
+  "authorizedUser": {
+    "type": "Issue",
+    "action": "update",
+    "actor": {
+      "id": "admin-123",
+      "type": "user",
+      "email": "admin@example.com",
+      "name": "Admin User",
+      "url": "https://linear.app/myworkspace/profiles/admin-123"
+    },
+    "data": {
+      "id": "issue-789",
+      "identifier": "SEC-789",
+      "title": "Vulnerability fixed",
+      "labels": [],
+      "slaType": null
+    },
+    "updatedFrom": {
+      "labels": [
+        {
+          "id": "label-1",
+          "name": "Vulnerability"
+        }
+      ]
+    },
+    "createdAt": "2025-12-22T10:00:00.000Z",
+    "url": "https://linear.app/myworkspace/issue/SEC-789",
+    "webhookTimestamp": 1703260800000,
+    "webhookId": "webhook-789",
+    "organizationId": "org-123"
+  }
+}
