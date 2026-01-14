@@ -2,7 +2,9 @@
 
 Automatically sync HubSpot tickets and companies with Linear issues and customers.
 
-[Video Walkthrough](https://www.loom.com/share/cc5132a7ed29489fad6ffce99caf4adb)
+[Ticket Intake Video Walkthrough](https://us02web.zoom.us/clips/share/ldegdTl1QwyrAnU7PqUGQA)
+
+[Customer Sync Video Walkthrough](https://www.loom.com/share/cc5132a7ed29489fad6ffce99caf4adb)
 
 ## Features
 
