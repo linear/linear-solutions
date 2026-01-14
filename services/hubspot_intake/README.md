@@ -2,6 +2,8 @@
 
 Automatically sync HubSpot tickets and companies with Linear issues and customers.
 
+[Video Walkthrough](https://www.loom.com/share/cc5132a7ed29489fad6ffce99caf4adb)
+
 ## Features
 
 - 🎫 **Ticket Sync**: Creates Linear issues when HubSpot tickets are created
