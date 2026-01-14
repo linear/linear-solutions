@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const config = require('../utils/config');
 
 const HUBSPOT_API_URL = 'https://api.hubapi.com';
 
@@ -132,6 +133,239 @@ class HubSpotService {
    */
   getTicketUrl(ticketId, portalId) {
     return `https://app.hubspot.com/contacts/${portalId}/ticket/${ticketId}`;
+  }
+
+  /**
+   * Get owner email by owner ID
+   * Used for mapping HubSpot owners to Linear users
+   */
+  async getOwnerEmail(ownerId) {
+    try {
+      const response = await axios.get(
+        `${HUBSPOT_API_URL}/crm/v3/owners/${ownerId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      return response.data.email;
+    } catch (error) {
+      logger.error(`Failed to get owner ${ownerId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get owner ID by email
+   * Used for mapping Linear users to HubSpot owners
+   */
+  async getOwnerByEmail(email) {
+    try {
+      const response = await axios.get(
+        `${HUBSPOT_API_URL}/crm/v3/owners`,
+        {
+          params: {
+            email: email,
+            limit: 1
+          },
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      const owner = response.data.results?.[0];
+      if (owner) {
+        logger.debug(`Found HubSpot owner for ${email}: ${owner.id}`);
+        return owner.id;
+      }
+      return null;
+    } catch (error) {
+      logger.error(`Failed to find owner by email ${email}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get company details from HubSpot
+   * Fetches all properties needed for Linear customer sync (configured in field-mappings.json)
+   */
+  async getCompany(companyId) {
+    try {
+      // Get configurable field list from config
+      const fieldsToFetch = config.getHubSpotFieldsToFetch();
+      
+      logger.debug(`Fetching company ${companyId} with properties: ${fieldsToFetch.join(', ')}`);
+      
+      const response = await axios.get(
+        `${HUBSPOT_API_URL}/crm/v3/objects/companies/${companyId}`,
+        {
+          params: {
+            properties: fieldsToFetch.join(',')
+          },
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      logger.debug(`HubSpot returned properties: ${Object.keys(response.data.properties).join(', ')}`);
+
+      return {
+        id: response.data.id,
+        properties: response.data.properties
+      };
+    } catch (error) {
+      logger.error(`Failed to get company ${companyId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all companies from HubSpot (with pagination)
+   */
+  async getCompanies(limit = 100, after = null) {
+    try {
+      const params = {
+        properties: ['name', 'domain', 'website'],
+        limit: limit
+      };
+
+      if (after) {
+        params.after = after;
+      }
+
+      const response = await axios.get(
+        `${HUBSPOT_API_URL}/crm/v3/objects/companies`,
+        {
+          params,
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      return {
+        results: response.data.results,
+        paging: response.data.paging
+      };
+    } catch (error) {
+      logger.error('Failed to get companies:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a company in HubSpot
+   */
+  async createCompany(properties) {
+    try {
+      const response = await axios.post(
+        `${HUBSPOT_API_URL}/crm/v3/objects/companies`,
+        {
+          properties
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      logger.info(`Created HubSpot company: ${response.data.id}`);
+      return {
+        id: response.data.id,
+        properties: response.data.properties
+      };
+    } catch (error) {
+      logger.error('Failed to create company:', error.message);
+      if (error.response?.data) {
+        logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Update company in HubSpot
+   */
+  async updateCompany(companyId, properties) {
+    try {
+      const response = await axios.patch(
+        `${HUBSPOT_API_URL}/crm/v3/objects/companies/${companyId}`,
+        {
+          properties
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      logger.info(`Updated HubSpot company: ${companyId}`);
+      return response.data;
+    } catch (error) {
+      logger.error(`Failed to update company ${companyId}:`, error.message);
+      if (error.response?.data) {
+        logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Search for a company by name in HubSpot using the native search API
+   * Returns the first matching company or null if not found
+   */
+  async searchCompanyByName(name) {
+    try {
+      const searchName = name.trim();
+      
+      const response = await axios.post(
+        `${HUBSPOT_API_URL}/crm/v3/objects/companies/search`,
+        {
+          filterGroups: [{
+            filters: [{
+              propertyName: 'name',
+              operator: 'EQ',
+              value: searchName
+            }]
+          }],
+          properties: config.getHubSpotFieldsToFetch(),
+          limit: 1
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const result = response.data.results[0] || null;
+      
+      if (result) {
+        logger.debug(`Found HubSpot company by name "${searchName}": ${result.id}`);
+      } else {
+        logger.debug(`No HubSpot company found with name "${searchName}"`);
+      }
+
+      return result;
+    } catch (error) {
+      logger.error(`Failed to search for company by name "${name}":`, error.message);
+      if (error.response?.data) {
+        logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
   }
 }
 

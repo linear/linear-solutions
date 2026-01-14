@@ -1,7 +1,7 @@
 {
   "name": "hubspot-linear-integration",
   "version": "1.0.0",
-  "description": "Integration to create Linear tickets from HubSpot ticket events",
+  "description": "Bidirectional sync between HubSpot (tickets/companies) and Linear (issues/customers)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -12,15 +12,17 @@
     "hubspot",
     "linear",
     "webhook",
-    "integration"
+    "integration",
+    "sync",
+    "customers",
+    "tickets"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "crypto": "^1.0.1"
+    "express": "^4.18.2"
   }
 }
 

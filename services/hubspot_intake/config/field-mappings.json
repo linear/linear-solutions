@@ -1,0 +1,45 @@
+{
+  "description": "Field mapping configuration between HubSpot and Linear. Customize these to match your setup.",
+  
+  "hubspotFields": {
+    "status": "hs_lead_status",
+    "tier": "hs_ideal_customer_profile",
+    "owner": "hubspot_owner_id",
+    "revenue": "annualrevenue",
+    "size": "numberofemployees",
+    "domain": "domain"
+  },
+
+  "statusMapping": {
+    "description": "Maps HubSpot lead status values to Linear customer status names. HubSpot → Linear uses display names, Linear → HubSpot uses internal values.",
+    "hubspotToLinear": {
+      "NEW": "Prospect",
+      "OPEN": "Active",
+      "IN_PROGRESS": "Active",
+      "CONNECTED": "Active",
+      "UNQUALIFIED": "Churned",
+      "BAD_TIMING": "Lost"
+    },
+    "linearToHubspot": {
+      "Prospect": "NEW",
+      "Active": "OPEN",
+      "Churned": "UNQUALIFIED",
+      "Lost": "UNQUALIFIED"
+    }
+  },
+
+  "tierMapping": {
+    "description": "Maps HubSpot ICP/tier values to Linear customer tier names. Note: linearToHubspot must use HubSpot internal values (e.g., tier_1 not Tier 1).",
+    "hubspotToLinear": {
+      "true": "Enterprise",
+      "false": "Standard"
+    },
+    "linearToHubspot": {
+      "Enterprise": "true",
+      "Standard": "false",
+      "Tier 1": "tier_1",
+      "Tier 2": "tier_2",
+      "Tier 3": "tier_3"
+    }
+  }
+}

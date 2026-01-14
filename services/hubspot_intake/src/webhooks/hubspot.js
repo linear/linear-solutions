@@ -2,6 +2,78 @@ const crypto = require('crypto');
 const logger = require('../utils/logger');
 const linearService = require('../services/linear');
 const hubspotService = require('../services/hubspot');
+const customerSync = require('../services/customerSync');
+
+/**
+ * Simple in-memory cache for processed webhook events
+ * Prevents duplicate processing when webhooks are delivered multiple times
+ * Note: For multi-instance deployments, consider using Redis instead
+ */
+const processedEvents = new Map();
+const EVENT_CACHE_TTL_MS = 3600000; // 1 hour
+const MAX_CACHED_EVENTS = 1000;
+
+/**
+ * Generate a unique key for a webhook event
+ */
+function getEventKey(event) {
+  return `${event.subscriptionType}:${event.objectId}:${event.occurredAt || event.eventId || ''}`;
+}
+
+/**
+ * Check if an event has already been processed
+ */
+function isEventProcessed(eventKey) {
+  const timestamp = processedEvents.get(eventKey);
+  if (!timestamp) return false;
+  
+  // Check if cache entry has expired
+  if (Date.now() - timestamp > EVENT_CACHE_TTL_MS) {
+    processedEvents.delete(eventKey);
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Mark an event as processed
+ */
+function markEventProcessed(eventKey) {
+  // Clean up old entries if cache is getting large
+  if (processedEvents.size >= MAX_CACHED_EVENTS) {
+    const now = Date.now();
+    for (const [key, time] of processedEvents) {
+      if (now - time > EVENT_CACHE_TTL_MS) {
+        processedEvents.delete(key);
+      }
+    }
+  }
+  
+  processedEvents.set(eventKey, Date.now());
+}
+
+/**
+ * Timing-safe comparison of two strings
+ * Prevents timing attacks on signature verification
+ */
+function timingSafeCompare(a, b) {
+  try {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    
+    // If lengths differ, still do comparison to prevent timing leak
+    if (bufA.length !== bufB.length) {
+      // Compare with self to maintain constant time
+      crypto.timingSafeEqual(bufA, bufA);
+      return false;
+    }
+    
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Verify HubSpot webhook signature v1 (simpler, more reliable)
@@ -16,7 +88,7 @@ function verifySignatureV1(requestBody, signature, clientSecret) {
     .update(sourceString)
     .digest('hex');
   
-  return hash === signature;
+  return timingSafeCompare(hash, signature);
 }
 
 /**
@@ -32,7 +104,7 @@ function verifySignatureV3(requestBody, signature, clientSecret, method, uri) {
     .update(sourceString)
     .digest('base64');
   
-  return hash === signature;
+  return timingSafeCompare(hash, signature);
 }
 
 /**
@@ -184,62 +256,123 @@ async function handleHubSpotWebhook(req, res) {
     logger.debug('Webhook payload:', JSON.stringify(events, null, 2));
 
     for (const event of events) {
-      // Only process ticket creation events
+      // Check for duplicate events (idempotency)
+      const eventKey = getEventKey(event);
+      if (isEventProcessed(eventKey)) {
+        logger.debug(`Skipping duplicate event: ${eventKey}`);
+        continue;
+      }
+
+      // Process ticket creation events
       if (event.subscriptionType === 'ticket.creation') {
-        logger.info(`Processing ticket creation event: ${event.objectId}`);
+        // Check if ticket sync is enabled
+        if (process.env.ENABLE_TICKET_SYNC !== 'false') {
+          logger.info(`Processing ticket creation event: ${event.objectId}`);
+
+          try {
+            // Fetch full ticket details from HubSpot
+            const ticket = await hubspotService.getTicket(event.objectId);
+            
+            logger.info(`Ticket details: ${ticket.subject || 'No subject'}`);
+
+            // Check if ticket matches filter criteria
+            if (!shouldProcessTicket(ticket)) {
+              logger.info(`Ticket ${event.objectId} does not match filter criteria, skipping`);
+              continue;
+            }
+
+            // Create ticket in Linear
+            const linearIssue = await linearService.createIssue({
+              title: ticket.subject || 'Untitled HubSpot Ticket',
+              description: formatTicketDescription(ticket),
+              priority: mapPriority(ticket.hs_ticket_priority),
+              hubspotTicketId: ticket.hs_ticket_id || event.objectId
+            });
+
+            logger.info(`Created Linear issue: ${linearIssue.id} (${linearIssue.identifier}) for HubSpot ticket: ${event.objectId}`);
+            
+            // Mark event as processed after successful creation
+            markEventProcessed(eventKey);
+
+            // Add HubSpot ticket link as attachment to Linear issue
+            const hubspotTicketUrl = hubspotService.getTicketUrl(event.objectId, event.portalId);
+            try {
+              await linearService.addAttachmentToIssue(
+                linearIssue.id,
+                hubspotTicketUrl,
+                'HubSpot Ticket'
+              );
+              logger.info(`Added HubSpot ticket link to Linear issue`);
+            } catch (error) {
+              logger.error(`Failed to add HubSpot link to Linear issue:`, error.message);
+              // Continue even if attachment fails
+            }
+
+            // Optionally, add a note to HubSpot ticket with Linear issue link
+            if (process.env.UPDATE_HUBSPOT_WITH_LINEAR_LINK === 'true' && linearIssue.url) {
+              try {
+                await hubspotService.addNoteToTicket(
+                  event.objectId,
+                  `Linear issue created: ${linearIssue.identifier} \n\n${linearIssue.url}`
+                );
+                logger.info(`Added note to HubSpot ticket with Linear issue link`);
+              } catch (error) {
+                logger.error(`Failed to add note to HubSpot ticket:`, error.message);
+                // Continue even if note fails
+              }
+            }
+
+          } catch (error) {
+            logger.error(`Error processing ticket ${event.objectId}:`, error.message);
+            // Continue processing other events even if one fails
+          }
+        } else {
+          logger.debug('Ticket sync is disabled, skipping ticket creation event');
+        }
+      }
+      // Process company creation events
+      else if (event.subscriptionType === 'company.creation') {
+        logger.info(`Processing company creation event: ${event.objectId}`);
 
         try {
-          // Fetch full ticket details from HubSpot
-          const ticket = await hubspotService.getTicket(event.objectId);
+          // Fetch full company details from HubSpot
+          const companyResult = await hubspotService.getCompany(event.objectId);
           
-          logger.info(`Ticket details: ${ticket.subject || 'No subject'}`);
+          logger.info(`Company details: ${companyResult.properties?.name || 'No name'}`);
 
-          // Check if ticket matches filter criteria
-          if (!shouldProcessTicket(ticket)) {
-            logger.info(`Ticket ${event.objectId} does not match filter criteria, skipping`);
-            continue;
-          }
-
-          // Create ticket in Linear
-          const linearIssue = await linearService.createIssue({
-            title: ticket.subject || 'Untitled HubSpot Ticket',
-            description: formatTicketDescription(ticket),
-            priority: mapPriority(ticket.hs_ticket_priority),
-            hubspotTicketId: ticket.hs_ticket_id || event.objectId
-          });
-
-          logger.info(`Created Linear issue: ${linearIssue.id} (${linearIssue.identifier}) for HubSpot ticket: ${event.objectId}`);
-
-          // Add HubSpot ticket link as attachment to Linear issue
-          const hubspotTicketUrl = hubspotService.getTicketUrl(event.objectId, event.portalId);
-          try {
-            await linearService.addAttachmentToIssue(
-              linearIssue.id,
-              hubspotTicketUrl,
-              'HubSpot Ticket'
-            );
-            logger.info(`Added HubSpot ticket link to Linear issue`);
-          } catch (error) {
-            logger.error(`Failed to add HubSpot link to Linear issue:`, error.message);
-            // Continue even if attachment fails
-          }
-
-          // Optionally, add a note to HubSpot ticket with Linear issue link
-          if (process.env.UPDATE_HUBSPOT_WITH_LINEAR_LINK === 'true' && linearIssue.url) {
-            try {
-              await hubspotService.addNoteToTicket(
-                event.objectId,
-                `Linear issue created: ${linearIssue.identifier} \n\n${linearIssue.url}`
-              );
-              logger.info(`Added note to HubSpot ticket with Linear issue link`);
-            } catch (error) {
-              logger.error(`Failed to add note to HubSpot ticket:`, error.message);
-              // Continue even if note fails
-            }
+          // Sync company to Linear
+          const result = await customerSync.syncHubSpotToLinear(companyResult);
+          
+          // Mark event as processed after successful sync
+          if (result) {
+            markEventProcessed(eventKey);
           }
 
         } catch (error) {
-          logger.error(`Error processing ticket ${event.objectId}:`, error.message);
+          logger.error(`Error processing company creation ${event.objectId}:`, error.message);
+          // Continue processing other events even if one fails
+        }
+      }
+      // Process company property change events
+      else if (event.subscriptionType === 'company.propertyChange') {
+        logger.info(`Processing company property change event: ${event.objectId}`);
+
+        try {
+          // Fetch full company details from HubSpot
+          const companyResult = await hubspotService.getCompany(event.objectId);
+          
+          logger.info(`Company details: ${companyResult.properties?.name || 'No name'}`);
+
+          // Sync company to Linear
+          const result = await customerSync.syncHubSpotToLinear(companyResult);
+          
+          // Mark event as processed after successful sync
+          if (result) {
+            markEventProcessed(eventKey);
+          }
+
+        } catch (error) {
+          logger.error(`Error processing company property change ${event.objectId}:`, error.message);
           // Continue processing other events even if one fails
         }
       } else {
