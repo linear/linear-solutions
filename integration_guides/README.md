@@ -19,9 +19,9 @@ Both are passed in the `Authorization` header (no "Bearer" prefix needed).
 
 ---
 
-## Bricks
+## Scenarios
 
-### [01 - Creating Issues with Labels](./bricks/01-create-issue-with-labels/)
+### [01 - Creating Issues with Labels](./scenarios/01-create-issue-with-labels/)
 
 How to create issues in Linear with dynamically managed labels and label groups.
 
@@ -32,7 +32,7 @@ How to create issues in Linear with dynamically managed labels and label groups.
 - Setting workflow state (Triage)
 - The "resolve labels first" pattern
 
-### [02 - Updating Issues](./bricks/02-update-issue/)
+### [02 - Updating Issues](./scenarios/02-update-issue/)
 
 How to update existing issues, manage labels, and batch update multiple issues.
 
@@ -42,7 +42,7 @@ How to update existing issues, manage labels, and batch update multiple issues.
 - Adding/removing labels
 - Batch updating multiple issues
 
-### [03 - Receiving Webhooks](./bricks/03-webhooks/)
+### [03 - Receiving Webhooks](./scenarios/03-webhooks/)
 
 How to receive, verify, and filter webhook events from Linear.
 
@@ -52,7 +52,7 @@ How to receive, verify, and filter webhook events from Linear.
 - Filtering by action, type, and field changes
 - Common patterns (state changes, assignments, priority)
 
-### [04 - Creating Teams from Templates](./bricks/04-create-team-from-template/)
+### [04 - Creating Teams from Templates](./scenarios/04-create-team-from-template/)
 
 How to create a new team that copies settings from an existing team.
 
