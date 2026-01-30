@@ -2,6 +2,8 @@
 
 A webhook-driven agent for Linear that automatically duplicates issues to multiple teams when a specific label is applied. This is useful for cross-platform development scenarios where the same work needs to be tracked separately by different teams (e.g., iOS and Android).
 
+[Video Walkthrough](https://www.loom.com/share/1ec3abc5515a405e8e7b8e9bdd9100de)
+
 ## How It Works
 
 1. When a configured trigger label (e.g., "Multi-Platform") is added to an issue in a source team
