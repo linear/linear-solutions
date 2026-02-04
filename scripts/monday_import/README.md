@@ -65,10 +65,10 @@ npx tsx src/index.ts run -c import-config.json -f ~/Downloads/monday-export.xlsx
   "version": "1.0",
   "source": {
     "sheets": {
-      "items": "Product Portfolio",
-      "updates": "Product Portfolio-updates"
+      "items": "Projects",
+      "updates": "Projects-updates"
     },
-    "headerRow": 3
+    "headerRow": 1
   },
   "target": {
     "team": "prompt",
@@ -103,13 +103,12 @@ npx tsx src/index.ts run -c import-config.json -f ~/Downloads/monday-export.xlsx
     }
   },
   "statusMapping": {
-    "01 Assessment": "Backlog",
-    "02 Discovery": "Backlog",
-    "03 Ready to Plan": "Planned",
-    "04 Planning": "Planned",
-    "05 Execution": "Started",
-    "06 Completed": "Completed",
-    "99 Cancelled": "Canceled",
+    "Not Started": "Backlog",
+    "Planning": "Planned",
+    "In Progress": "Started",
+    "On Hold": "Paused",
+    "Done": "Completed",
+    "Cancelled": "Canceled",
     "_default": "Backlog"
   },
   "issueStatusMapping": {
