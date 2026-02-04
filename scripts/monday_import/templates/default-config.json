@@ -1,0 +1,147 @@
+{
+  "$schema": "./node_modules/monday-import/config-schema.json",
+  "version": "1.0",
+
+  "source": {
+    "sheets": {
+      "items": "Sheet1",
+      "updates": "Sheet2"
+    },
+    "headerRow": 1,
+    "identifierColumn": "Item ID"
+  },
+
+  "target": {
+    "team": "prompt",
+    "createMissingLabels": true
+  },
+
+  "dataModel": {
+    "items": {
+      "importAs": "project",
+      "subitems": {
+        "enabled": false,
+        "importAs": "issue",
+        "sourceColumn": "Subitems",
+        "delimiter": ","
+      }
+    }
+  },
+
+  "fieldMappings": {
+    "project": {
+      "name": { "source": "Name" },
+      "description": {
+        "sources": ["Description", "Notes"],
+        "template": "## Description\n{{Description}}\n\n## Notes\n{{Notes}}\n\n---\n_Imported from Monday.com (ID: {{_mondayId}})_"
+      },
+      "state": { "source": "Status", "transform": "statusMap" },
+      "priority": { "source": "Priority", "transform": "priorityMap" },
+      "startDate": { "source": "Timeline", "transform": "timelineStart" },
+      "targetDate": { "source": "Timeline", "transform": "timelineEnd" },
+      "lead": { "source": "Owner", "transform": "user" }
+    },
+    "issue": {
+      "title": { "source": "Name" },
+      "description": { "source": "Description" },
+      "state": { "source": "Status", "transform": "statusMap" },
+      "assignee": { "source": "Owner", "transform": "user" },
+      "priority": { "source": "Priority", "transform": "priorityMap" },
+      "estimate": { "source": "Points", "transform": "number" },
+      "dueDate": { "source": "Due Date", "transform": "date" }
+    }
+  },
+
+  "statusMapping": {
+    "Not Started": "Backlog",
+    "Planning": "Planned",
+    "In Progress": "In Progress",
+    "Review": "In Review",
+    "Done": "Completed",
+    "Completed": "Completed",
+    "Cancelled": "Canceled",
+    "_default": "Backlog"
+  },
+
+  "priorityMapping": {
+    "Critical": 1,
+    "High": 2,
+    "Medium": 3,
+    "Low": 4,
+    "_default": 0
+  },
+
+  "labels": [
+    {
+      "sourceColumn": "Category",
+      "groupName": "Category",
+      "createGroup": true
+    },
+    {
+      "sourceColumn": "Department",
+      "groupName": "Department"
+    },
+    {
+      "sourceColumn": "Tags",
+      "groupName": "Tags",
+      "delimiter": ","
+    }
+  ],
+
+  "groups": {
+    "enabled": true,
+    "sourceColumn": "Group",
+    "groupName": "Board Section"
+  },
+
+  "checkboxes": [
+    {
+      "sourceColumn": "Approved",
+      "labelWhenChecked": "Approved",
+      "color": "#4caf50"
+    }
+  ],
+
+  "links": {
+    "enabled": true,
+    "columns": [
+      { "source": "Documentation Link", "title": "Documentation" },
+      { "source": "External URL" }
+    ]
+  },
+
+  "dependencies": {
+    "enabled": false,
+    "blocksColumn": "Blocks",
+    "blockedByColumn": "Blocked By",
+    "matchBy": "name"
+  },
+
+  "updates": {
+    "enabled": true,
+    "dateColumn": "Update Date",
+    "authorColumn": "Author",
+    "contentColumn": "Update Text",
+    "linkColumn": "Item Name",
+    "sortOrder": "asc",
+    "authorFallback": "prepend"
+  },
+
+  "userMapping": {
+    "file": "./user-mapping.json",
+    "fallbackBehavior": "appendToContent",
+    "fallbackTemplate": "[Originally by {{name}}] "
+  },
+
+  "options": {
+    "continueOnError": true,
+    "rateLimitMs": 100,
+    "skipEmpty": true
+  },
+
+  "deduplication": {
+    "enabled": true,
+    "matchBy": "Item ID",
+    "onDuplicate": "skip"
+  }
+}

@@ -1,0 +1,36 @@
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Config files with sensitive data
+user-mapping.json
+import-config.json
+!templates/*.json
+
+# Import results
+import-results.json
+import-failures.json
+
+# Test/debug files
+debug.ts
+debug.js
+*.test.xlsx
+*_test_data.xlsx
+*_anonymized.xlsx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Test data (Excel exports may contain sensitive data)
+*.xlsx
+!templates/*.xlsx
