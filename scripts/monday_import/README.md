@@ -2,6 +2,9 @@
 
 A config-driven CLI tool for importing Monday.com Excel exports into Linear. Supports flexible field mappings, label groups, subitems, project updates, and more.
 
+Video Walkthrough:
+https://www.loom.com/share/63e5b79571064352acce940248bd4984
+
 ## Features
 
 - **Config-driven**: Define your own field mappings via JSON configuration
