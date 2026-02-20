@@ -1,0 +1,12 @@
+venv/
+.cache/
+__pycache__/
+*.pyc
+
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store
+test_linear_to_bigquery.py

@@ -1,0 +1,2 @@
+airbyte
+google-cloud-bigquery[pandas]
