@@ -1,6 +1,6 @@
 # Linear to BigQuery ETL Pipeline (PyAirbyte)
 
-A Python script that extracts **all available data** from [Linear](https://linear.app/) using [PyAirbyte](https://docs.airbyte.com/developers/pyairbyte/) and loads it into Google BigQuery. No Docker, Kubernetes, or Airbyte UI required — just Python.
+A Python script that extracts **all available data** from [Linear](https://linear.app/) using [PyAirbyte](https://docs.airbyte.com/developers/pyairbyte/) and loads it into Google BigQuery.
 
 ---
 
@@ -612,60 +612,6 @@ Customer tier definitions.
 | `createdAt` | string, nullable | Creation timestamp |
 | `updatedAt` | string, nullable | Last update timestamp |
 | `_extracted_at` | string | Timestamp when data was extracted |
-
----
-
-## BigQuery Output
-
-After running the script, you'll have the following in BigQuery:
-
-- **Dataset:** `linear_data` (or your custom dataset name)
-- **Tables:** One table per stream (16 total)
-- **Write mode:** WRITE_TRUNCATE — each run fully replaces the data
-- **Extra column:** `_extracted_at` — timestamp of when the extraction ran
-
-### Example Query: Issues with team and status info
-
-```sql
-SELECT
-    i.identifier,
-    i.title,
-    i.priorityLabel,
-    ws.name AS status,
-    ws.type AS status_type,
-    t.name AS team_name,
-    u.name AS assignee,
-    i.createdAt,
-    i.completedAt
-FROM `your-project.linear_data.issues` i
-LEFT JOIN `your-project.linear_data.workflow_states` ws ON i.stateId = ws.id
-LEFT JOIN `your-project.linear_data.teams` t ON i.teamId = t.id
-LEFT JOIN `your-project.linear_data.users` u ON i.assigneeId = u.id
-ORDER BY i.createdAt DESC
-```
-
-### Entity Relationship Diagram
-
-```
- customers ──< customer_needs >── issues ──< comments
-     │                              │            │
-     │                              ├── attachments
-customer_tiers                      │
-                                    ├──< issue_relations >── issues
-customer_statuses                   │
-                                    ├── issue_labels (via labelIds)
-                                    │
-                                    ├── workflow_states (via stateId)
-                                    │
-                                    ├── users (via assigneeId, creatorId)
-                                    │
-                                    ├── teams (via teamId)
-                                    │      └── cycles
-                                    │
-                                    └── projects
-                                           ├── project_milestones
-                                           └── project_statuses (via statusId)
-```
 
 ---
 
