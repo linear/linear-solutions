@@ -1,6 +1,6 @@
-# ADO Repos Integration for Linear
+# Prototype ADO Repos Integration for Linear
 
-A lightweight TypeScript service that connects Azure DevOps pull requests to Linear issues — mirroring the behavior of Linear's built-in GitHub integration.
+A lightweight prototype TypeScript service that connects Azure DevOps pull requests to Linear issues — mirroring the behavior of Linear's built-in GitHub integration.
 
 #### NOTE
 This is not a formal integration built by the Linear engineering/product team. This should be considered more a working prototype meant to be adapted, configured, and hosted by you or your organization to use and maintain.
@@ -211,22 +211,28 @@ Customize state names in `.env` to match your team's workflow.
 
 ## Comment Syncing
 
-### ADO → Linear
-When someone comments on an ADO PR that's linked to a Linear issue, the comment appears on the Linear issue with attribution:
+Comment syncing uses a **synced thread** model — only replies within a dedicated thread are synced, not all comments. This gives users explicit control: reply to the synced thread to communicate cross-platform, or comment normally for internal discussion.
 
-> **Jamal Hartnett** commented on ADO PR #42:
+When a PR is first linked to a Linear issue, the integration creates:
+- A **root comment** on the Linear issue: *"This comment thread is synced to a corresponding ADO PR #N. All replies are displayed in both locations."*
+- A **dedicated thread** on the ADO PR: *"This thread is synced with Linear issue ENG-123. All replies are displayed in both locations."*
+
+### ADO → Linear
+When someone replies in the ADO sync thread, the reply appears under the Linear root comment:
+
+> **Jamal Hartnett** (ADO PR #42):
 >
 > Looks good, just one nit on line 15.
 
 ### Linear → ADO
-When someone comments on a Linear issue that has a linked ADO PR, the comment appears as a new thread on the PR:
+When someone replies to the Linear sync root comment, the reply appears in the ADO sync thread:
 
-> **Alice** commented on Linear issue ENG-123:
+> **Alice** (Linear ENG-123):
 >
 > Updated the implementation per review feedback.
 
 ### Loop Prevention
-Comments created by the integration include a hidden marker (`<!-- linear-ado-sync -->`) to prevent infinite sync loops.
+The integration tracks the ID of every comment it creates. When a webhook fires for one of those comments, it's recognized as integration-created and skipped — no markers or hidden content in comment bodies.
 
 ## Architecture
 
@@ -255,7 +261,7 @@ Comments created by the integration include a hidden marker (`<!-- linear-ado-sy
 | `src/webhookLinear.ts` | Linear webhook handler (comment sync to ADO) |
 | `src/comments.ts` | Bidirectional comment sync logic with loop prevention |
 | `src/linkback.ts` | Linkback comment creation/update on ADO PRs |
-| `src/store.ts` | In-memory store for PR↔issue links and comment mappings |
+| `src/store.ts` | JSON-file-backed store for PR↔issue links, sync threads, and comment mappings |
 
 ### Dependencies
 
@@ -269,7 +275,7 @@ No Express, no Azure DevOps SDK. Uses Node.js built-in `http` and `fetch`.
 
 This is a prototype intended as a starting point. For production deployment, consider:
 
-1. **Persistent storage**: Replace `src/store.ts` with a database (Redis, SQLite, Postgres) so PR↔issue links survive server restarts
+1. **Scalable storage**: The current `src/store.ts` persists to a local JSON file (`data/store.json`) which survives restarts but isn't suitable for multi-instance or high-volume deployments. Replace with a database (Redis, SQLite, Postgres) for durability and concurrency
 2. **Queue processing**: Add a job queue (Bull, BullMQ) for reliable webhook processing with retries
 3. **ADO token refresh**: The current `ADO_OAUTH_TOKEN` is static; implement a Microsoft Entra ID refresh flow to rotate it automatically
 4. **Multi-project support**: Extend configuration to support multiple ADO projects/repositories
