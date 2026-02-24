@@ -2,7 +2,7 @@
 
 A lightweight TypeScript service that connects Azure DevOps pull requests to Linear issues — mirroring the behavior of Linear's built-in GitHub integration.
 
-(Video Walkthrough)[https://www.loom.com/share/325850603ae44ac8b70dd4cd8601f2ae]
+[Video Walkthrough](https://www.loom.com/share/325850603ae44ac8b70dd4cd8601f2ae)
 
 ## What It Does
 
