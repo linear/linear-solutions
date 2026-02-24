@@ -1,4 +1,4 @@
-# Prototype ADO Repos Integration for Linear
+# Prototype ADO Repos PR Linking for Linear
 
 A lightweight prototype TypeScript service that connects Azure DevOps pull requests to Linear issues — mirroring the behavior of Linear's built-in GitHub integration.
 
@@ -26,7 +26,6 @@ This is not a formal integration built by the Linear engineering/product team. T
 ### 1. Install
 
 ```bash
-cd services/ado_repos
 npm install
 ```
 
