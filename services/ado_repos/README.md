@@ -2,6 +2,8 @@
 
 A lightweight TypeScript service that connects Azure DevOps pull requests to Linear issues — mirroring the behavior of Linear's built-in GitHub integration.
 
+(Video Walkthrough)[https://www.loom.com/share/325850603ae44ac8b70dd4cd8601f2ae]
+
 ## What It Does
 
 - **Links PRs to issues**: Parses PR title, description, and branch name for Linear issue identifiers (e.g. `ENG-123`) using the same magic-word matching as the GitHub integration
