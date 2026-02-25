@@ -1,4 +1,4 @@
-# Linear Import Tool
+# Linear Project Import Tool
 
 A config-driven CLI for importing projects, milestones, and issues from CSV files into [Linear](https://linear.app).
 
