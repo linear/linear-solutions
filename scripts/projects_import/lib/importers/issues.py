@@ -1,5 +1,7 @@
 """Issue importer for Linear."""
 
+import re
+
 from ..client import LinearClient
 from ..discovery import WorkspaceConfig, get_team_state_id
 from ..utils import truncate_name, parse_date, normalize_status, normalize_priority, parse_estimate, priority_from_ranking, MAX_ISSUE_TITLE_LENGTH
@@ -18,7 +20,8 @@ mutation CreateIssue(
   $dueDate: TimelessDate,
   $estimate: Int,
   $cycleId: String,
-  $templateId: String
+  $templateId: String,
+  $labelIds: [String!]
 ) {
   issueCreate(input: {
     title: $title,
@@ -33,7 +36,8 @@ mutation CreateIssue(
     dueDate: $dueDate,
     estimate: $estimate,
     cycleId: $cycleId,
-    templateId: $templateId
+    templateId: $templateId,
+    labelIds: $labelIds
   }) {
     success
     issue {
@@ -161,6 +165,10 @@ def import_issues(
                 extra_display = f", Milestone: {issue_data.get('milestone_name', '?')[:30]}"
             print(f"  → Project: {project_display}, Team: {team_display}{extra_display}")
             print(f"  → Assignee: {assignee}{assignee_status}, State: {state}{link_info}")
+            if issue_data.get("label_ids"):
+                print(f"  → Labels: {len(issue_data['label_ids'])} label(s)")
+            for url in issue_data.get("extracted_links", []):
+                print(f"  → Extracted link: {url[:70]}")
             results["success"] += 1
             entity_uuid = issue_data.get("entity_uuid")
             if entity_uuid:
@@ -220,6 +228,9 @@ def import_issues(
                 variables["cycleId"] = issue_data["cycle_id"]
             if workspace.issue_template_id:
                 variables["templateId"] = workspace.issue_template_id
+            label_ids = issue_data.get("label_ids")
+            if label_ids:
+                variables["labelIds"] = label_ids
 
             result = client.execute(CREATE_ISSUE_MUTATION, variables)
 
@@ -244,6 +255,14 @@ def import_issues(
                         print(f"    📎 Added link: {link_title or 'Link'}")
                     except Exception as link_error:
                         print(f"    ⚠️ Link failed: {str(link_error)[:60]}")
+
+                # Attach URLs extracted from the title field
+                for idx, url in enumerate(issue_data.get("extracted_links", []), 1):
+                    try:
+                        add_issue_link(client, issue_id, url, title=f"Reference {idx}")
+                        print(f"    📎 Added extracted link: {url[:60]}")
+                    except Exception as link_error:
+                        print(f"    ⚠️ Extracted link failed: {str(link_error)[:60]}")
                 
                 # Add to existing issues to prevent duplicates within same run
                 if project_id:
@@ -491,21 +510,53 @@ def create_issue_relations(
     return results
 
 
+def _extract_title_and_urls(raw_title: str) -> tuple:
+    """Split a multiline title cell into (clean_title, [urls]).
+
+    Many spreadsheets embed ticket URLs on lines below the task name.
+    This extracts them so the title stays clean and URLs can be attached
+    as link resources on the issue.
+    """
+    lines = raw_title.split('\n')
+    title_lines = []
+    urls = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r'https?://\S+$', stripped):
+            urls.append(stripped)
+        else:
+            title_lines.append(stripped)
+
+    title = title_lines[0] if title_lines else raw_title.strip().split('\n')[0].strip()
+    return title, urls
+
+
 def prepare_issues_from_csv(csv_data: list, config: dict, workspace: WorkspaceConfig) -> list:
     """Prepare issue data from CSV rows."""
     issues_config = config.get("issues", {})
     columns = issues_config.get("columns", {})
     status_map = issues_config.get("status_map", {})
     priority_map = issues_config.get("priority_map", {})
+    description_extras = issues_config.get("description_extras", [])
+    label_groups = issues_config.get("label_groups", [])
+    extract_urls = issues_config.get("extract_urls_from_title", False)
     
     issues = []
     
     for row in csv_data:
-        # Get title
+        # Get title (with optional URL extraction)
         title_col = columns.get("title", "Task")
-        title = row.get(title_col, "").strip()
-        if not title:
+        raw_title = row.get(title_col, "").strip()
+        if not raw_title:
             continue
+
+        extracted_links = []
+        if extract_urls and '\n' in raw_title:
+            title, extracted_links = _extract_title_and_urls(raw_title)
+        else:
+            title = raw_title
         
         # Get project name
         project_col = columns.get("project", "Project")
@@ -581,9 +632,19 @@ def prepare_issues_from_csv(csv_data: list, config: dict, workspace: WorkspaceCo
         if external_link and not external_link.startswith("http"):
             external_link = None  # Skip invalid URLs
         
-        # Get description
+        # Build description: base column + extras
         desc_col = columns.get("description", "Remarks")
-        description = row.get(desc_col, "").strip()
+        desc_parts = []
+        base_desc = row.get(desc_col, "").strip()
+        if base_desc:
+            desc_parts.append(base_desc)
+        for extra in description_extras:
+            col_name = extra.get("column")
+            label_text = extra.get("label", col_name)
+            val = row.get(col_name, "").strip()
+            if val:
+                desc_parts.append(f"**{label_text}:** {val}")
+        description = "\n\n".join(desc_parts) if desc_parts else ""
         
         # Get dependencies
         deps_col = columns.get("dependencies", "Dependencies")
@@ -593,6 +654,17 @@ def prepare_issues_from_csv(csv_data: list, config: dict, workspace: WorkspaceCo
         cycle_col = columns.get("cycle", "Sprint")
         cycle_value = row.get(cycle_col, "").strip()
         cycle_id = workspace.cycles.get(cycle_value) if cycle_value else None
+
+        # Resolve issue label IDs
+        label_ids = []
+        for lg in label_groups:
+            group_name = lg.get("group_name")
+            col = lg.get("column")
+            value = row.get(col, "").strip()
+            if value and group_name in workspace.issue_labels:
+                children = workspace.issue_labels[group_name].get("children", {})
+                if value in children:
+                    label_ids.append(children[value])
         
         issues.append({
             "title": title,
@@ -608,6 +680,8 @@ def prepare_issues_from_csv(csv_data: list, config: dict, workspace: WorkspaceCo
             "description": description,
             "dependencies": dependencies,
             "cycle_id": cycle_id,
+            "label_ids": label_ids or None,
+            "extracted_links": extracted_links,
             "source_file": None,  # Will be set by caller if needed
         })
     

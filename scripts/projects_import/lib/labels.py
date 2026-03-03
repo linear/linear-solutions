@@ -1,4 +1,4 @@
-"""Project label management for Linear import."""
+"""Label management for Linear import (project and issue labels)."""
 
 from .client import LinearClient
 from .discovery import WorkspaceConfig
@@ -259,4 +259,199 @@ def ensure_label_groups(
         print(f"\n  Created {results['groups_created']} groups, {results['labels_created']} labels")
         print(f"  Skipped {results['groups_skipped']} existing groups, {results['labels_skipped']} existing labels")
     
+    return results
+
+
+# ── Issue label mutations ─────────────────────────────────────────────
+
+CREATE_ISSUE_LABEL_GROUP_MUTATION = """
+mutation CreateIssueLabelGroup($name: String!, $teamId: String) {
+  issueLabelCreate(input: {
+    name: $name,
+    isGroup: true,
+    teamId: $teamId
+  }) {
+    success
+    issueLabel {
+      id
+      name
+    }
+  }
+}
+"""
+
+CREATE_ISSUE_LABEL_MUTATION = """
+mutation CreateIssueLabel($name: String!, $parentId: String!, $teamId: String) {
+  issueLabelCreate(input: {
+    name: $name,
+    parentId: $parentId,
+    teamId: $teamId
+  }) {
+    success
+    issueLabel {
+      id
+      name
+    }
+  }
+}
+"""
+
+
+def ensure_issue_label_groups(
+    client: LinearClient,
+    workspace: WorkspaceConfig,
+    config: dict,
+    csv_data: list,
+    dry_run: bool = False,
+) -> dict:
+    """Ensure all issue-level label groups exist, creating them if needed.
+
+    Reads ``config.issues.label_groups`` and mirrors the same create-or-skip
+    logic used for project labels, but targets issue labels instead.
+    """
+    issues_config = config.get("issues", {})
+    label_groups = issues_config.get("label_groups", [])
+
+    results = {
+        "groups_created": 0,
+        "labels_created": 0,
+        "groups_skipped": 0,
+        "labels_skipped": 0,
+        "errors": [],
+    }
+
+    if not label_groups:
+        return results
+
+    team_id = workspace.target_team_id
+
+    print("\n🏷️  Ensuring issue label groups exist...")
+
+    for lg in label_groups:
+        group_name = lg.get("group_name")
+        column = lg.get("column")
+        multi_value = lg.get("multi_value", False)
+        separator = lg.get("separator", ",")
+
+        if not group_name or not column:
+            continue
+
+        unique_values = set()
+        for row in csv_data:
+            value = row.get(column, "").strip()
+            if multi_value and value:
+                for v in value.split(separator):
+                    v = v.strip()
+                    if v:
+                        unique_values.add(v)
+            elif value:
+                unique_values.add(value)
+
+        if not unique_values:
+            print(f"  ⏭ {group_name}: No values found in column '{column}'")
+            continue
+
+        if group_name in workspace.issue_labels:
+            group_info = workspace.issue_labels[group_name]
+            if group_info.get("isGroup"):
+                print(f"  ✓ {group_name}: Group exists")
+                results["groups_skipped"] += 1
+
+                existing_children = set(group_info.get("children", {}).keys())
+                missing_children = unique_values - existing_children
+
+                if missing_children:
+                    group_id = group_info["id"]
+                    for child_name in sorted(missing_children):
+                        if dry_run:
+                            print(f"    → Would create label: {child_name}")
+                            results["labels_created"] += 1
+                            workspace.issue_labels[group_name]["children"][child_name] = f"dry-run-label-{child_name}"
+                        else:
+                            try:
+                                result = client.execute(CREATE_ISSUE_LABEL_MUTATION, {
+                                    "name": child_name,
+                                    "parentId": group_id,
+                                    "teamId": team_id,
+                                })
+                                if result.get("issueLabelCreate", {}).get("success"):
+                                    label = result["issueLabelCreate"]["issueLabel"]
+                                    print(f"    ✓ Created label: {child_name}")
+                                    results["labels_created"] += 1
+                                    workspace.issue_labels[group_name]["children"][child_name] = label["id"]
+                                else:
+                                    print(f"    ✗ Failed to create label: {child_name}")
+                                    results["errors"].append({"label": child_name, "error": "Unknown error"})
+                                client.rate_limit_delay()
+                            except Exception as e:
+                                print(f"    ✗ Error creating label {child_name}: {e}")
+                                results["errors"].append({"label": child_name, "error": str(e)})
+                else:
+                    results["labels_skipped"] += len(existing_children)
+                continue
+
+        # Group doesn't exist – create it
+        if dry_run:
+            print(f"  → Would create group: {group_name}")
+            results["groups_created"] += 1
+            workspace.issue_labels[group_name] = {
+                "id": f"dry-run-group-{group_name}",
+                "isGroup": True,
+                "children": {},
+            }
+            for child_name in sorted(unique_values):
+                print(f"    → Would create label: {child_name}")
+                results["labels_created"] += 1
+                workspace.issue_labels[group_name]["children"][child_name] = f"dry-run-label-{child_name}"
+        else:
+            try:
+                result = client.execute(CREATE_ISSUE_LABEL_GROUP_MUTATION, {
+                    "name": group_name,
+                    "teamId": team_id,
+                })
+                if result.get("issueLabelCreate", {}).get("success"):
+                    group = result["issueLabelCreate"]["issueLabel"]
+                    group_id = group["id"]
+                    print(f"  ✓ Created group: {group_name}")
+                    results["groups_created"] += 1
+
+                    workspace.issue_labels[group_name] = {
+                        "id": group_id,
+                        "isGroup": True,
+                        "children": {},
+                    }
+
+                    for child_name in sorted(unique_values):
+                        try:
+                            child_result = client.execute(CREATE_ISSUE_LABEL_MUTATION, {
+                                "name": child_name,
+                                "parentId": group_id,
+                                "teamId": team_id,
+                            })
+                            if child_result.get("issueLabelCreate", {}).get("success"):
+                                child_label = child_result["issueLabelCreate"]["issueLabel"]
+                                print(f"    ✓ Created label: {child_name}")
+                                results["labels_created"] += 1
+                                workspace.issue_labels[group_name]["children"][child_name] = child_label["id"]
+                            else:
+                                print(f"    ✗ Failed to create label: {child_name}")
+                                results["errors"].append({"label": child_name, "error": "Unknown error"})
+                            client.rate_limit_delay()
+                        except Exception as e:
+                            print(f"    ✗ Error creating label {child_name}: {e}")
+                            results["errors"].append({"label": child_name, "error": str(e)})
+                else:
+                    print(f"  ✗ Failed to create group: {group_name}")
+                    results["errors"].append({"group": group_name, "error": "Unknown error"})
+                client.rate_limit_delay()
+            except Exception as e:
+                print(f"  ✗ Error creating group {group_name}: {e}")
+                results["errors"].append({"group": group_name, "error": str(e)})
+
+    if dry_run:
+        print(f"\n  [DRY RUN] Would create {results['groups_created']} groups, {results['labels_created']} labels")
+    else:
+        print(f"\n  Created {results['groups_created']} groups, {results['labels_created']} labels")
+        print(f"  Skipped {results['groups_skipped']} existing groups, {results['labels_skipped']} existing labels")
+
     return results

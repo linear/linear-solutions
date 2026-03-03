@@ -152,8 +152,26 @@ mutation CreateProjectLink($url: String!, $label: String!, $projectId: String!) 
 """
 
 
-def _update_existing_project(client: LinearClient, project_id: str, project_data: dict):
-    """Update lead, members, and links on an existing project."""
+def _update_existing_project(client: LinearClient, project_id: str, project_data: dict, target_team_id: str = None):
+    """Update lead, members, links, and team association on an existing project."""
+    # Ensure the target team is associated with the project so issues can be linked
+    if target_team_id:
+        try:
+            result = client.execute(GET_PROJECT_TEAMS_QUERY, {"id": project_id})
+            current_team_ids = {
+                t["id"] for t in result.get("project", {}).get("teams", {}).get("nodes", [])
+            }
+            if target_team_id not in current_team_ids:
+                all_team_ids = list(current_team_ids | {target_team_id})
+                update_result = client.execute(UPDATE_PROJECT_TEAMS_MUTATION, {
+                    "id": project_id,
+                    "teamIds": all_team_ids,
+                })
+                if update_result.get("projectUpdate", {}).get("success"):
+                    print(f"    🔗 Added target team to project")
+        except Exception as e:
+            print(f"    ⚠️ Team association failed: {str(e)[:60]}")
+
     lead_id = project_data.get("lead_id")
     if lead_id:
         try:
@@ -256,7 +274,7 @@ def import_projects(
             results["skipped"] += 1
             results["created_projects"][full_name] = existing_project_id
             if not dry_run:
-                _update_existing_project(client, existing_project_id, project_data)
+                _update_existing_project(client, existing_project_id, project_data, target_team_id=workspace.target_team_id)
             continue
 
         # Build team IDs - use per-project teams if available, otherwise fall back to workspace defaults

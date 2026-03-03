@@ -54,6 +54,28 @@ query DiscoverWorkspace {
 }
 """
 
+DISCOVER_ISSUE_LABELS_QUERY = """
+query DiscoverIssueLabels($after: String) {
+  issueLabels(first: 100, after: $after) {
+    nodes {
+      id
+      name
+      isGroup
+      children {
+        nodes {
+          id
+          name
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+"""
+
 DISCOVER_TEAM_STATES_QUERY = """
 query DiscoverTeamStates($teamId: String!) {
   team(id: $teamId) {
@@ -154,6 +176,7 @@ class WorkspaceConfig:
         self.cycles = {}  # name/number -> id
         self.users = {}  # name/email -> id
         self.project_labels = {}  # name -> {id, isGroup, children}
+        self.issue_labels = {}  # name -> {id, isGroup, children}
         self.project_templates = []  # list of {id, name, type}
         self.issue_templates = []  # list of {id, name, type}
         
@@ -217,6 +240,17 @@ class WorkspaceConfig:
         if self.project_labels:
             print(f"\n🏷️  PROJECT LABELS ({len(self.project_labels)}):")
             for name, info in sorted(self.project_labels.items()):
+                if info["isGroup"]:
+                    print(f"  • {name} (group)")
+                    for child_name in info.get("children", {}).keys():
+                        print(f"    └─ {child_name}")
+                else:
+                    print(f"  • {name}")
+
+        # Issue Labels
+        if self.issue_labels:
+            print(f"\n🏷️  ISSUE LABELS ({len(self.issue_labels)}):")
+            for name, info in sorted(self.issue_labels.items()):
                 if info["isGroup"]:
                     print(f"  • {name} (group)")
                     for child_name in info.get("children", {}).keys():
@@ -406,11 +440,33 @@ def discover_workspace(client: LinearClient, config: dict) -> WorkspaceConfig:
             "children": children,
         }
 
-    # Step 7: Fetch existing projects for deduplication
-    if workspace.target_team_id:
-        print("  Fetching existing projects for deduplication...")
-        workspace.existing_projects = fetch_existing_projects(client, workspace.target_team_id)
-        print(f"    Found {len(workspace.existing_projects)} existing projects")
+    # Step 6b: Fetch issue labels (paginated, separate query for complexity)
+    print("  Fetching issue labels...")
+    after_cursor = None
+    while True:
+        variables = {"after": after_cursor} if after_cursor else {}
+        issue_label_data = client.execute(DISCOVER_ISSUE_LABELS_QUERY, variables)
+        il_root = issue_label_data.get("issueLabels", {})
+        for label in il_root.get("nodes", []):
+            children = {}
+            for child in label.get("children", {}).get("nodes", []):
+                children[child["name"]] = child["id"]
+            workspace.issue_labels[label["name"]] = {
+                "id": label["id"],
+                "isGroup": label["isGroup"],
+                "children": children,
+            }
+        page_info = il_root.get("pageInfo", {})
+        if page_info.get("hasNextPage"):
+            after_cursor = page_info["endCursor"]
+        else:
+            break
+
+    # Step 7: Fetch existing projects for deduplication (workspace-wide,
+    # because projects may not yet be associated with the target team)
+    print("  Fetching existing projects for deduplication...")
+    workspace.existing_projects = fetch_all_projects(client)
+    print(f"    Found {len(workspace.existing_projects)} existing projects")
 
     # Step 8: Fetch existing issues for deduplication
     if workspace.target_team_id:

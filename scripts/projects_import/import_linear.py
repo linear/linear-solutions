@@ -47,7 +47,7 @@ from lib.importers.issues import (
     prepare_milestone_issues_from_parent_task,
     create_issue_relations, create_name_based_relations,
 )
-from lib.labels import ensure_label_groups
+from lib.labels import ensure_label_groups, ensure_issue_label_groups
 from lib.teams import ensure_teams
 from lib.utils import extract_project_name_from_filename, convert_numbers_to_csv
 
@@ -200,6 +200,7 @@ def run_hierarchical_import(client, workspace, config, all_csv_data, csv_files, 
 
     # Step 4: Ensure labels exist
     label_results = ensure_label_groups(client, workspace, config, all_csv_data, dry_run=args.dry_run)
+    ensure_issue_label_groups(client, workspace, config, all_csv_data, dry_run=args.dry_run)
 
     # Step 5: Prepare and import projects (Features)
     project_results = {"success": 0, "failed": 0, "skipped": 0, "errors": [], "created_projects": {}}
@@ -435,6 +436,7 @@ def run_parent_task_import(client, workspace, config, all_csv_data, csv_files, a
     # Step 5: Ensure labels exist
     # ------------------------------------------------------------------
     label_results = ensure_label_groups(client, workspace, config, all_csv_data, dry_run=args.dry_run)
+    ensure_issue_label_groups(client, workspace, config, all_csv_data, dry_run=args.dry_run)
 
     # ------------------------------------------------------------------
     # Step 6: Import projects (depth 0)
@@ -836,7 +838,7 @@ Examples:
     issue_results = {"success": 0, "failed": 0, "skipped": 0}
     label_results = {"groups_created": 0, "labels_created": 0}
 
-    # STEP 1: Ensure label groups exist BEFORE preparing projects
+    # STEP 1: Ensure label groups exist BEFORE preparing projects/issues
     # This updates the workspace cache so projects can resolve label IDs
     if not args.issues_only and project_count > 0:
         label_results = ensure_label_groups(
@@ -846,6 +848,11 @@ Examples:
             all_csv_data,
             dry_run=args.dry_run,
         )
+
+    # STEP 1b: Ensure issue label groups exist (for issue-level labels)
+    issue_label_results = ensure_issue_label_groups(
+        client, workspace, config, all_csv_data, dry_run=args.dry_run,
+    )
 
     # STEP 2: NOW prepare projects (after labels exist in workspace cache)
     all_projects = []

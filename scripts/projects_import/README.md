@@ -216,9 +216,20 @@ Supports comma-separated URLs in a single cell. If a cell contains multiple URLs
 | `columns` | Field-to-column mapping |
 | `status_map` | Maps CSV values to Linear issue state names |
 | `priority_map` | Maps CSV values to Linear priority (1=Urgent, 2=High, 3=Medium, 4=Low) |
+| `extract_urls_from_title` | If `true`, splits multiline title cells: first line becomes title, `https://` lines become link attachments |
+| `label_groups` | Array of label group definitions applied as issue labels (auto-created) |
+| `description_extras` | Array of columns to append as metadata in the issue description |
 | `completed_column` | Column indicating completion (for parent-task mode) |
 | `completed_state` | Linear state to use for completed items |
 | `default_state` | Default Linear state for new issues |
+
+#### `issues.label_groups[]`
+
+Same structure as `projects.label_groups[]`. Each entry creates an issue label group and applies the matching child label to issues based on the CSV column value.
+
+#### `issues.description_extras[]`
+
+Same structure as `projects.description_extras[]`. Each entry appends a `**Label:** value` line to the issue description.
 
 #### `hierarchy` (hierarchical and parent-task modes)
 
