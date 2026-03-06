@@ -82,6 +82,16 @@ mutation UpdateProjectLead($id: String!, $leadId: String!) {
 }
 """
 
+UPDATE_PROJECT_LABELS_MUTATION = """
+mutation UpdateProjectLabels($id: String!, $labelIds: [String!]!) {
+  projectUpdate(id: $id, input: {
+    labelIds: $labelIds
+  }) {
+    success
+  }
+}
+"""
+
 CREATE_PROJECT_UPDATE_MUTATION = """
 mutation CreateProjectUpdate(
   $projectId: String!,
@@ -196,6 +206,22 @@ def _update_existing_project(client: LinearClient, project_id: str, project_data
         except Exception as e:
             print(f"    ⚠️ Member update failed: {str(e)[:60]}")
 
+    # Update labels (combine label_ids + conditional_label_ids)
+    label_ids = list(project_data.get("label_ids", []))
+    for cond_id in project_data.get("conditional_label_ids", []):
+        if cond_id and cond_id not in label_ids:
+            label_ids.append(cond_id)
+    if label_ids:
+        try:
+            result = client.execute(UPDATE_PROJECT_LABELS_MUTATION, {
+                "id": project_id,
+                "labelIds": label_ids,
+            })
+            if result.get("projectUpdate", {}).get("success"):
+                print(f"    🏷️  Updated {len(label_ids)} label(s)")
+        except Exception as e:
+            print(f"    ⚠️ Label update failed: {str(e)[:60]}")
+
     _add_external_links(client, project_id, project_data)
 
 
@@ -273,7 +299,14 @@ def import_projects(
             print(f"  ⏭ Skipped (already exists)")
             results["skipped"] += 1
             results["created_projects"][full_name] = existing_project_id
-            if not dry_run:
+            if dry_run:
+                all_label_ids = list(project_data.get("label_ids", []))
+                for cond_id in project_data.get("conditional_label_ids", []):
+                    if cond_id and cond_id not in all_label_ids:
+                        all_label_ids.append(cond_id)
+                if all_label_ids:
+                    print(f"    → Would update {len(all_label_ids)} label(s)")
+            else:
                 _update_existing_project(client, existing_project_id, project_data, target_team_id=workspace.target_team_id)
             continue
 

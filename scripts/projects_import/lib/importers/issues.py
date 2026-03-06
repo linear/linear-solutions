@@ -76,6 +76,16 @@ mutation CreateIssueRelation($issueId: String!, $relatedIssueId: String!, $type:
 }
 """
 
+UPDATE_ISSUE_LABELS_MUTATION = """
+mutation UpdateIssueLabels($id: String!, $labelIds: [String!]!) {
+  issueUpdate(id: $id, input: {
+    labelIds: $labelIds
+  }) {
+    success
+  }
+}
+"""
+
 
 def import_issues(
     client: LinearClient,
@@ -135,15 +145,30 @@ def import_issues(
 
         # Check for duplicate - works for both existing and newly created projects
         if project_id:
-            existing_in_project = workspace.existing_issues.get(project_id, set())
-            if full_title.strip().lower() in existing_in_project:
+            existing_in_project = workspace.existing_issues.get(project_id, {})
+            existing_issue_id = existing_in_project.get(full_title.strip().lower())
+            if existing_issue_id:
                 print(f"  ⏭ Skipped (already exists in project)")
                 results["skipped"] += 1
                 # Still track for relations
                 entity_uuid = issue_data.get("entity_uuid")
                 if entity_uuid:
-                    # Try to find existing issue ID (approximate)
-                    results["created_issues"][entity_uuid] = None
+                    results["created_issues"][entity_uuid] = existing_issue_id
+                # Update labels on the existing issue if we have labels to apply
+                label_ids = issue_data.get("label_ids")
+                if label_ids and not dry_run and existing_issue_id != "dry-run":
+                    try:
+                        result = client.execute(UPDATE_ISSUE_LABELS_MUTATION, {
+                            "id": existing_issue_id,
+                            "labelIds": label_ids,
+                        })
+                        if result.get("issueUpdate", {}).get("success"):
+                            print(f"    🏷️  Updated {len(label_ids)} label(s)")
+                        client.rate_limit_delay()
+                    except Exception as e:
+                        print(f"    ⚠️ Label update failed: {str(e)[:60]}")
+                elif label_ids and dry_run:
+                    print(f"    → Would update {len(label_ids)} label(s)")
                 continue
 
         # Determine team ID (per-issue or workspace default)
@@ -267,8 +292,8 @@ def import_issues(
                 # Add to existing issues to prevent duplicates within same run
                 if project_id:
                     if project_id not in workspace.existing_issues:
-                        workspace.existing_issues[project_id] = set()
-                    workspace.existing_issues[project_id].add(full_title.strip().lower())
+                        workspace.existing_issues[project_id] = {}
+                    workspace.existing_issues[project_id][full_title.strip().lower()] = issue_id
             else:
                 print(f"  ✗ Failed (unknown error)")
                 results["failed"] += 1

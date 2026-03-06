@@ -31,6 +31,10 @@ def parse_date(date_str: str) -> str:
         "%Y/%m/%d",      # 2026/01/05
         "%d/%m/%Y",      # 05/01/2026 (European)
         "%d-%m-%Y",      # 05-01-2026
+        "%b %d, %Y",    # Mar 06, 2026
+        "%B %d, %Y",    # March 06, 2026
+        "%b %d %Y",     # Mar 06 2026
+        "%B %d %Y",     # March 06 2026
     ]
     
     for fmt in formats:
@@ -40,6 +44,20 @@ def parse_date(date_str: str) -> str:
         except ValueError:
             continue
     
+    # Formats without a year — assume current year
+    no_year_formats = [
+        "%b %d",         # Mar 6
+        "%B %d",         # March 6
+        "%m/%d",         # 3/6
+    ]
+    current_year = datetime.now().year
+    for fmt in no_year_formats:
+        try:
+            dt = datetime.strptime(date_str, fmt).replace(year=current_year)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
     return None
 
 

@@ -190,7 +190,7 @@ class WorkspaceConfig:
         
         # Deduplication data
         self.existing_projects = {}  # lowercase project name -> project id
-        self.existing_issues = {}  # project_id -> set of lowercase issue titles
+        self.existing_issues = {}  # project_id -> {lowercase_title: issue_id}
         
         # Per-team state cache (for hierarchical mode with multiple teams)
         self._team_states = {}  # team_id -> {state_name: state_id}
@@ -562,8 +562,8 @@ def get_team_state_id(client: LinearClient, workspace: WorkspaceConfig, team_id:
 
 
 def fetch_existing_issues(client: LinearClient, team_id: str) -> dict:
-    """Fetch all existing issue titles for a team, grouped by project."""
-    existing_issues = {}  # project_id -> set of lowercase titles
+    """Fetch all existing issue titles and IDs for a team, grouped by project."""
+    existing_issues = {}  # project_id -> {lowercase_title: issue_id}
     after = None
     
     while True:
@@ -580,8 +580,8 @@ def fetch_existing_issues(client: LinearClient, team_id: str) -> dict:
             project_id = project["id"] if project else "none"
             
             if project_id not in existing_issues:
-                existing_issues[project_id] = set()
-            existing_issues[project_id].add(issue["title"].strip().lower())
+                existing_issues[project_id] = {}
+            existing_issues[project_id][issue["title"].strip().lower()] = issue["id"]
         
         page_info = issues_data.get("pageInfo", {})
         if page_info.get("hasNextPage"):
