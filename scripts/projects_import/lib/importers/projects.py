@@ -2,7 +2,7 @@
 
 from ..client import LinearClient
 from ..discovery import WorkspaceConfig
-from ..utils import truncate_name, parse_date, normalize_status, normalize_priority, priority_from_ranking, MAX_PROJECT_NAME_LENGTH
+from ..utils import truncate_name, parse_date, parse_last_date, normalize_status, normalize_priority, priority_from_ranking, MAX_PROJECT_NAME_LENGTH
 
 CREATE_PROJECT_MUTATION = """
 mutation CreateProject(
@@ -146,6 +146,20 @@ mutation CreateProjectMilestone(
 }
 """
 
+FETCH_PROJECT_LINKS_QUERY = """
+query FetchProjectLinks($projectId: String!) {
+  project(id: $projectId) {
+    externalLinks {
+      nodes {
+        id
+        url
+        label
+      }
+    }
+  }
+}
+"""
+
 CREATE_PROJECT_LINK_MUTATION = """
 mutation CreateProjectLink($url: String!, $label: String!, $projectId: String!) {
   entityExternalLinkCreate(input: {
@@ -157,6 +171,27 @@ mutation CreateProjectLink($url: String!, $label: String!, $projectId: String!) 
     entityExternalLink {
       id
     }
+  }
+}
+"""
+
+INITIATIVE_TO_PROJECT_CREATE_MUTATION = """
+mutation InitiativeToProjectCreate($projectId: String!, $initiativeId: String!) {
+  initiativeToProjectCreate(input: {
+    projectId: $projectId,
+    initiativeId: $initiativeId
+  }) {
+    success
+  }
+}
+"""
+
+UPDATE_EXTERNAL_LINK_MUTATION = """
+mutation UpdateExternalLink($id: String!, $label: String!) {
+  entityExternalLinkUpdate(id: $id, input: {
+    label: $label
+  }) {
+    success
   }
 }
 """
@@ -223,26 +258,105 @@ def _update_existing_project(client: LinearClient, project_id: str, project_data
             print(f"    ⚠️ Label update failed: {str(e)[:60]}")
 
     _add_external_links(client, project_id, project_data)
+    _add_milestones(client, project_id, project_data)
+    _add_initiative_parent(client, project_id, project_data)
+
+
+def _add_initiative_parent(client: LinearClient, project_id: str, project_data: dict):
+    """Link project to a matching initiative if one was resolved."""
+    initiative = project_data.get("initiative")
+    if not initiative:
+        return
+    init_id = initiative["id"]
+    # Skip if project is already linked to this initiative
+    if project_id in initiative.get("project_ids", set()):
+        return
+    try:
+        result = client.execute(INITIATIVE_TO_PROJECT_CREATE_MUTATION, {
+            "projectId": project_id,
+            "initiativeId": init_id,
+        })
+        if result.get("initiativeToProjectCreate", {}).get("success"):
+            print(f"    📌 Linked to initiative: {initiative['name']}")
+            initiative["project_ids"].add(project_id)
+    except Exception as e:
+        err = str(e)
+        if "already exists" in err.lower():
+            pass
+        else:
+            print(f"    ⚠️ Initiative link failed: {err[:60]}")
+
+
+def _add_milestones(client: LinearClient, project_id: str, project_data: dict):
+    """Create project milestones from milestone_columns config."""
+    milestones = project_data.get("milestones", [])
+    if not milestones:
+        return
+
+    # Fetch existing milestones on this project for dedup
+    existing = {}
+    try:
+        result = client.execute(FETCH_PROJECT_MILESTONES_QUERY, {"projectId": project_id})
+        for node in result.get("project", {}).get("projectMilestones", {}).get("nodes", []):
+            existing[node["name"].lower()] = node["id"]
+    except Exception:
+        pass
+
+    for ms in milestones:
+        ms_name = ms["name"]
+        if ms_name.lower() in existing:
+            continue
+        try:
+            variables = {"name": ms_name, "projectId": project_id}
+            if ms.get("target_date"):
+                variables["targetDate"] = ms["target_date"]
+            result = client.execute(CREATE_PROJECT_MILESTONE_MUTATION, variables)
+            if result.get("projectMilestoneCreate", {}).get("success"):
+                print(f"    🏁 Milestone: {ms_name} ({ms.get('target_date') or ms.get('raw_date', 'no date')})")
+        except Exception as e:
+            print(f"    ⚠️ Milestone '{ms_name}' failed: {str(e)[:60]}")
 
 
 def _add_external_links(client: LinearClient, project_id: str, project_data: dict):
-    """Add external links (single legacy + multi-column) to a project."""
+    """Add external links (single legacy + multi-column) to a project, deduping by URL."""
+    all_links = []
+
     # Legacy single link
     link_url = project_data.get("link_url")
     if link_url:
-        try:
-            result = client.execute(CREATE_PROJECT_LINK_MUTATION, {
-                "url": link_url,
-                "label": project_data.get("link_title") or "External Link",
-                "projectId": project_id,
-            })
-            if result.get("entityExternalLinkCreate", {}).get("success"):
-                print(f"    🔗 Added link: {project_data.get('link_title') or 'Link'}")
-        except Exception as e:
-            print(f"    ⚠️ Link failed: {str(e)[:60]}")
+        all_links.append({"url": link_url, "label": project_data.get("link_title") or "External Link"})
 
     # Multi-column external links
-    for link in project_data.get("external_links", []):
+    all_links.extend(project_data.get("external_links", []))
+
+    if not all_links:
+        return
+
+    # Fetch existing links on this project for URL-based dedup/update
+    existing_by_url = {}  # normalized_url -> {id, label}
+    try:
+        result = client.execute(FETCH_PROJECT_LINKS_QUERY, {"projectId": project_id})
+        for node in result.get("project", {}).get("externalLinks", {}).get("nodes", []):
+            norm_url = node.get("url", "").rstrip("/")
+            existing_by_url[norm_url] = {"id": node["id"], "label": node.get("label", "")}
+    except Exception:
+        pass
+
+    for link in all_links:
+        norm_url = link["url"].rstrip("/")
+        existing = existing_by_url.get(norm_url)
+        if existing:
+            if existing["label"] != link["label"]:
+                try:
+                    result = client.execute(UPDATE_EXTERNAL_LINK_MUTATION, {
+                        "id": existing["id"],
+                        "label": link["label"],
+                    })
+                    if result.get("entityExternalLinkUpdate", {}).get("success"):
+                        print(f"    🔗 Updated link: {existing['label']} → {link['label']}")
+                except Exception as e:
+                    print(f"    ⚠️ Link update failed: {str(e)[:60]}")
+            continue
         try:
             result = client.execute(CREATE_PROJECT_LINK_MUTATION, {
                 "url": link["url"],
@@ -285,7 +399,7 @@ def import_projects(
     print(f"\n{'[DRY RUN] ' if dry_run else ''}Importing {total} projects...\n")
 
     for i, project_data in enumerate(projects, 1):
-        full_name = project_data["name"]
+        full_name = " ".join(project_data["name"].split())
         name = truncate_name(full_name, MAX_PROJECT_NAME_LENGTH)
         display_name = name[:50] + "..." if len(name) > 50 else name
         
@@ -384,25 +498,28 @@ def import_projects(
                 print(f"  → Link: {project_data['link_title'] or 'Link'} ({project_data['link_url'][:50]}...)")
             for link in project_data.get("external_links", []):
                 print(f"  → Link: {link['label']} ({link['url'][:60]}...)")
+            for ms in project_data.get("milestones", []):
+                print(f"  → Milestone: {ms['name']} ({ms.get('target_date') or ms.get('raw_date') or 'no date'})")
+            if project_data.get("initiative"):
+                print(f"  → Initiative: {project_data['initiative']['name']}")
             
             results["success"] += 1
             results["created_projects"][full_name] = "dry-run"
             continue
 
         try:
-            # Use project-specific description if provided, else use full name
-            description = project_data.get("description") or full_name
-            if full_name != name and full_name not in description:
-                description = f"**Full Name:** {full_name}\n\n{description}"
-            # Linear project description max is 255 characters
-            if len(description) > 255:
+            description = project_data.get("description")
+            if not description and full_name != name:
+                description = f"**Full Name:** {full_name}"
+            if description and len(description) > 255:
                 description = description[:252] + "..."
             
             variables = {
                 "name": name,
-                "description": description,
                 "teamIds": team_ids,
             }
+            if description:
+                variables["description"] = description
             
             if project_data.get("status_id"):
                 variables["statusId"] = project_data["status_id"]
@@ -447,25 +564,24 @@ def import_projects(
                 # Add external links as project resources
                 _add_external_links(client, project_id, project_data)
 
+                # Create milestones from milestone_columns
+                _add_milestones(client, project_id, project_data)
+
+                # Link to parent initiative if matched
+                _add_initiative_parent(client, project_id, project_data)
+
                 # Create project update if health or update text exists
                 health = project_data.get("health")
                 update_text = project_data.get("update_text")
                 if health or update_text:
                     try:
-                        # Body is required for project updates
-                        body = update_text if update_text else f"Project status: {health}"
+                        body = _format_update_body(update_text) if update_text else f"Project status: {health}"
                         update_vars = {
                             "projectId": project_id,
                             "body": body
                         }
                         if health:
-                            # Map health value to Linear enum
-                            health_map = project_config.get("health_map", {
-                                "On Track": "onTrack",
-                                "At Risk": "atRisk", 
-                                "Off Track": "offTrack"
-                            })
-                            linear_health = health_map.get(health)
+                            linear_health = _resolve_health(health, project_config)
                             if linear_health:
                                 update_vars["health"] = linear_health
                         
@@ -683,11 +799,13 @@ def prepare_projects_from_csv(csv_data: list, config: dict, workspace: Workspace
                     if not label_info.get("isGroup"):
                         project["conditional_label_ids"].append(label_info["id"])
 
-        # Dates
+        # Dates (use parse_last_date when multi_date is enabled)
+        multi_date = project_config.get("multi_date", False)
+        date_fn = parse_last_date if multi_date else parse_date
         if start_date_col:
-            project["start_date"] = parse_date(row.get(start_date_col, ""))
+            project["start_date"] = date_fn(row.get(start_date_col, ""))
         if target_date_col:
-            project["target_date"] = parse_date(row.get(target_date_col, ""))
+            project["target_date"] = date_fn(row.get(target_date_col, ""))
 
         # Description: base text + extra metadata fields
         desc_parts = []
@@ -720,7 +838,10 @@ def prepare_projects_from_csv(csv_data: list, config: dict, workspace: Workspace
         external_links = []
         for elc in project_config.get("external_link_columns", []):
             col_name = elc.get("column")
-            label_prefix = elc.get("label", col_name)
+            label_fallback = elc.get("label", col_name)
+            label_col = elc.get("label_column")
+            dynamic_label = row.get(label_col, "").strip() if label_col else ""
+            label_prefix = dynamic_label or label_fallback
             raw = row.get(col_name, "").strip()
             if not raw:
                 continue
@@ -732,6 +853,28 @@ def prepare_projects_from_csv(csv_data: list, config: dict, workspace: Workspace
                     external_links.append({"url": u, "label": f"{label_prefix} {idx}"})
         if external_links:
             project["external_links"] = external_links
+
+        # Milestone columns → list of {name, target_date} for post-creation.
+        # Always created (even without a date) so every project gets the milestone.
+        # Uses parse_last_date to handle comma-separated multi-date values.
+        milestones = []
+        for mc in project_config.get("milestone_columns", []):
+            ms_col = mc.get("column")
+            ms_name = mc.get("name", ms_col)
+            date_str = row.get(ms_col, "").strip()
+            milestones.append({
+                "name": ms_name,
+                "target_date": parse_last_date(date_str) if date_str else None,
+                "raw_date": date_str,
+            })
+        if milestones:
+            project["milestones"] = milestones
+
+        # Match project name to an initiative
+        if workspace.initiatives:
+            init_match = workspace.initiatives.get(name.strip().lower())
+            if init_match:
+                project["initiative"] = init_match
 
         projects.append(project)
     
@@ -764,6 +907,75 @@ def resolve_user_id(name: str, workspace: WorkspaceConfig) -> str:
         if normalized_name in normalized_key or normalized_key in normalized_name:
             return user_id
     
+    return None
+
+
+def _format_update_body(raw_text: str) -> str:
+    """Clean up raw project-update text so it renders well in Linear's markdown.
+
+    Turns inline section headers (``Highlights / Completed ✅: …``) into
+    bold headings on their own line, and strips placeholder template text.
+    """
+    import re
+
+    if not raw_text or not raw_text.strip():
+        return raw_text
+
+    text = raw_text.strip()
+
+    # Turn "Section Header: content" into "**Section Header**\ncontent"
+    # by matching common emoji-annotated header patterns at start-of-line.
+    header_re = re.compile(
+        r'^((?:Highlights\s*/\s*Completed\s*✅|'
+        r'Progress\s*&\s*Plans\s*🔄|'
+        r'Lowlight\s*/\s*Blocked\s*🚫|'
+        r'Flags\s*\+\s*Path\s*to\s*Green(?:\s*\(Optional\))?)'
+        r')\s*[:]\s*',
+        re.MULTILINE | re.IGNORECASE,
+    )
+    text = header_re.sub(r'**\1**\n', text)
+
+    # Strip placeholder template lines
+    placeholder_re = re.compile(
+        r'<[^>]*(?:Short summary|What\'s in progress|What\'s blocked)[^>]*>',
+        re.IGNORECASE,
+    )
+    text = placeholder_re.sub('', text)
+
+    # Collapse runs of 3+ blank lines down to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+
+def _resolve_health(health_raw: str, project_config: dict) -> str:
+    """Resolve a raw health/status string to a Linear ProjectUpdateHealthType enum.
+
+    Tries exact match against ``health_map`` first.  Falls back to
+    ``health_keywords`` (a list of ``{keyword, health}`` dicts checked in
+    priority order) for substring matching, which handles composite values
+    like ``"🟡 At Risk, ⭕ Delayed"``.
+    """
+    if not health_raw:
+        return None
+
+    health_map = project_config.get("health_map", {
+        "On Track": "onTrack",
+        "At Risk": "atRisk",
+        "Off Track": "offTrack",
+    })
+
+    # Exact match
+    if health_raw in health_map:
+        return health_map[health_raw]
+
+    # Keyword (substring) matching
+    health_keywords = project_config.get("health_keywords", [])
+    for entry in health_keywords:
+        kw = entry.get("keyword", "")
+        if kw and kw.lower() in health_raw.lower():
+            return entry.get("health")
+
     return None
 
 

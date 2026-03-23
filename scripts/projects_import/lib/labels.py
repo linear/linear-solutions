@@ -385,6 +385,69 @@ def _find_label_in_children(label_name: str, labels_dict: dict) -> tuple:
     return None, None
 
 
+def _create_issue_child_label(
+    client: LinearClient,
+    workspace: WorkspaceConfig,
+    group_name: str,
+    group_id: str,
+    child_name: str,
+    results: dict,
+):
+    """Create a single child label under a group (workspace-scoped).
+
+    Always attempts to create rather than reusing an existing label found
+    by name, because existing labels may be scoped to a different team.
+    """
+    try:
+        child_result = client.execute(CREATE_ISSUE_LABEL_MUTATION, {
+            "name": child_name,
+            "parentId": group_id,
+        })
+        if child_result.get("issueLabelCreate", {}).get("success"):
+            child_label = child_result["issueLabelCreate"]["issueLabel"]
+            print(f"    ✓ Created label: {child_name}")
+            results["labels_created"] += 1
+            workspace.issue_labels[group_name]["children"][child_name] = child_label["id"]
+        else:
+            print(f"    ✗ Failed to create label: {child_name}")
+            results["errors"].append({"label": child_name, "error": "Unknown error"})
+        client.rate_limit_delay()
+    except Exception as e:
+        error_str = str(e)
+        if "forbidden" in error_str.lower() or "not allowed" in error_str.lower():
+            print(f"    ✗ Permission denied creating labels – skipping")
+            results["errors"].append({"label": group_name, "error": error_str})
+        elif "duplicate" in error_str.lower() and "label name" in error_str.lower():
+            # A workspace-scoped label with the same name exists; find and reuse it
+            existing_id = _find_label_by_name(child_name, workspace.issue_labels)
+            if existing_id:
+                workspace.issue_labels[group_name]["children"][child_name] = existing_id
+                print(f"    ✓ Label already exists (workspace): {child_name}")
+                results["labels_skipped"] += 1
+            else:
+                print(f"    ⚠️  Label '{child_name}' exists but could not be resolved – skipping")
+                results["errors"].append({"label": child_name, "error": error_str})
+        elif "team mismatch" in error_str.lower():
+            # Group is team-scoped but we tried without teamId; create standalone
+            print(f"    ⚠️  Team mismatch for '{child_name}' – creating as standalone")
+            try:
+                standalone = client.execute(CREATE_STANDALONE_ISSUE_LABEL_MUTATION, {
+                    "name": child_name,
+                })
+                if standalone.get("issueLabelCreate", {}).get("success"):
+                    label = standalone["issueLabelCreate"]["issueLabel"]
+                    workspace.issue_labels[group_name]["children"][child_name] = label["id"]
+                    print(f"    ✓ Created standalone label: {child_name}")
+                    results["labels_created"] += 1
+                client.rate_limit_delay()
+            except Exception as inner_e:
+                print(f"    ✗ Standalone creation failed: {str(inner_e)[:80]}")
+                results["errors"].append({"label": child_name, "error": str(inner_e)})
+        else:
+            print(f"    ✗ Error creating label {child_name}: {e}")
+            results["errors"].append({"label": child_name, "error": error_str})
+
+
 def _create_standalone_issue_labels(
     client: LinearClient,
     workspace: WorkspaceConfig,
@@ -429,7 +492,6 @@ def _create_standalone_issue_labels(
         try:
             result = client.execute(CREATE_STANDALONE_ISSUE_LABEL_MUTATION, {
                 "name": child_name,
-                "teamId": team_id,
             })
             if result.get("issueLabelCreate", {}).get("success"):
                 label = result["issueLabelCreate"]["issueLabel"]
@@ -522,6 +584,11 @@ def ensure_issue_label_groups(
 
     Reads ``config.issues.label_groups`` and mirrors the same create-or-skip
     logic used for project labels, but targets issue labels instead.
+
+    Labels are created as workspace-scoped (no ``teamId``) so they work
+    with issues across any team.  When a label with the same name already
+    exists but is scoped to a different team, a new workspace-scoped label
+    is created instead.
     """
     issues_config = config.get("issues", {})
     label_groups = issues_config.get("label_groups", [])
@@ -536,8 +603,6 @@ def ensure_issue_label_groups(
 
     if not label_groups:
         return results
-
-    team_id = workspace.target_team_id
 
     print("\n🏷️  Ensuring issue label groups exist...")
 
@@ -577,43 +642,15 @@ def ensure_issue_label_groups(
                 if missing_children:
                     group_id = group_info["id"]
                     for child_name in sorted(missing_children):
-                        existing_id = _find_label_by_name(child_name, workspace.issue_labels)
-                        if existing_id:
-                            workspace.issue_labels[group_name]["children"][child_name] = existing_id
-                            print(f"    ✓ Label already exists: {child_name}")
-                            results["labels_skipped"] += 1
-                            continue
                         if dry_run:
                             print(f"    → Would create label: {child_name}")
                             results["labels_created"] += 1
                             workspace.issue_labels[group_name]["children"][child_name] = f"dry-run-label-{child_name}"
                         else:
-                            try:
-                                result = client.execute(CREATE_ISSUE_LABEL_MUTATION, {
-                                    "name": child_name,
-                                    "parentId": group_id,
-                                })
-                                if result.get("issueLabelCreate", {}).get("success"):
-                                    label = result["issueLabelCreate"]["issueLabel"]
-                                    print(f"    ✓ Created label: {child_name}")
-                                    results["labels_created"] += 1
-                                    workspace.issue_labels[group_name]["children"][child_name] = label["id"]
-                                else:
-                                    print(f"    ✗ Failed to create label: {child_name}")
-                                    results["errors"].append({"label": child_name, "error": "Unknown error"})
-                                client.rate_limit_delay()
-                            except Exception as e:
-                                error_str = str(e)
-                                if "forbidden" in error_str.lower() or "not allowed" in error_str.lower():
-                                    print(f"    ✗ Permission denied creating labels – skipping remaining")
-                                    results["errors"].append({"label": group_name, "error": error_str})
-                                    break
-                                if "duplicate" in error_str.lower() and "label name" in error_str.lower():
-                                    print(f"    ⚠️  Label '{child_name}' exists but not in discovered cache – skipping")
-                                    results["errors"].append({"label": child_name, "error": error_str})
-                                else:
-                                    print(f"    ✗ Error creating label {child_name}: {e}")
-                                    results["errors"].append({"label": child_name, "error": error_str})
+                            _create_issue_child_label(
+                                client, workspace, group_name, group_id,
+                                child_name, results,
+                            )
                 else:
                     results["labels_skipped"] += len(existing_children)
                 continue
@@ -624,11 +661,11 @@ def ensure_issue_label_groups(
                 print(f"     Creating labels as standalone...")
                 _create_standalone_issue_labels(
                     client, workspace, group_name, unique_values,
-                    team_id, dry_run, results,
+                    None, dry_run, results,
                 )
                 continue
 
-        # Group doesn't exist – create it
+        # Group doesn't exist – create it (workspace-scoped)
         if dry_run:
             print(f"  → Would create group: {group_name}")
             results["groups_created"] += 1
@@ -645,7 +682,6 @@ def ensure_issue_label_groups(
             try:
                 result = client.execute(CREATE_ISSUE_LABEL_GROUP_MUTATION, {
                     "name": group_name,
-                    "teamId": team_id,
                 })
                 if result.get("issueLabelCreate", {}).get("success"):
                     group = result["issueLabelCreate"]["issueLabel"]
@@ -660,38 +696,10 @@ def ensure_issue_label_groups(
                     }
 
                     for child_name in sorted(unique_values):
-                        existing_id = _find_label_by_name(child_name, workspace.issue_labels)
-                        if existing_id:
-                            workspace.issue_labels[group_name]["children"][child_name] = existing_id
-                            print(f"    ✓ Label already exists: {child_name}")
-                            results["labels_skipped"] += 1
-                            continue
-                        try:
-                            child_result = client.execute(CREATE_ISSUE_LABEL_MUTATION, {
-                                "name": child_name,
-                                "parentId": group_id,
-                            })
-                            if child_result.get("issueLabelCreate", {}).get("success"):
-                                child_label = child_result["issueLabelCreate"]["issueLabel"]
-                                print(f"    ✓ Created label: {child_name}")
-                                results["labels_created"] += 1
-                                workspace.issue_labels[group_name]["children"][child_name] = child_label["id"]
-                            else:
-                                print(f"    ✗ Failed to create label: {child_name}")
-                                results["errors"].append({"label": child_name, "error": "Unknown error"})
-                            client.rate_limit_delay()
-                        except Exception as e:
-                            error_str = str(e)
-                            if "forbidden" in error_str.lower() or "not allowed" in error_str.lower():
-                                print(f"    ✗ Permission denied creating labels – skipping remaining")
-                                results["errors"].append({"label": group_name, "error": error_str})
-                                break
-                            if "duplicate" in error_str.lower() and "label name" in error_str.lower():
-                                print(f"    ⚠️  Label '{child_name}' exists but not in discovered cache – skipping")
-                                results["errors"].append({"label": child_name, "error": error_str})
-                            else:
-                                print(f"    ✗ Error creating label {child_name}: {e}")
-                                results["errors"].append({"label": child_name, "error": error_str})
+                        _create_issue_child_label(
+                            client, workspace, group_name, group_id,
+                            child_name, results,
+                        )
                 else:
                     print(f"  ✗ Failed to create group: {group_name}")
                     results["errors"].append({"group": group_name, "error": "Unknown error"})
@@ -705,7 +713,7 @@ def ensure_issue_label_groups(
                     print(f"     Creating labels as standalone...")
                     _create_standalone_issue_labels(
                         client, workspace, group_name, unique_values,
-                        team_id, dry_run, results,
+                        None, dry_run, results,
                     )
                 else:
                     print(f"  ✗ Error creating group {group_name}: {e}")

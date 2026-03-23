@@ -49,7 +49,7 @@ from lib.importers.issues import (
 )
 from lib.labels import ensure_label_groups, ensure_issue_label_groups
 from lib.teams import ensure_teams
-from lib.utils import extract_project_name_from_filename, convert_numbers_to_csv
+from lib.utils import extract_project_name_from_filename, convert_numbers_to_csv, convert_xlsx_to_csv
 
 
 def load_config(config_path: str) -> dict:
@@ -90,10 +90,12 @@ def load_csv(csv_path: str) -> list:
     return rows
 
 
-def find_csv_files(pattern: str) -> list:
+def find_csv_files(pattern: str, xlsx_sheet: str = None) -> list:
     """Find CSV files matching the pattern.
     
     Apple Numbers (.numbers) files are automatically converted to CSV.
+    *xlsx_sheet* is forwarded to ``convert_xlsx_to_csv`` to select a
+    specific worksheet when converting Excel files.
     """
     if "*" in pattern or "?" in pattern:
         files = glob.glob(pattern)
@@ -103,11 +105,14 @@ def find_csv_files(pattern: str) -> list:
     else:
         files = [pattern]
 
-    # Auto-convert .numbers files to CSV
+    # Auto-convert .numbers and .xlsx files to CSV
     converted = []
     for f in files:
         if f.lower().endswith(".numbers"):
             csv_path = convert_numbers_to_csv(f)
+            converted.append(csv_path)
+        elif f.lower().endswith((".xlsx", ".xls")):
+            csv_path = convert_xlsx_to_csv(f, sheet_name=xlsx_sheet)
             converted.append(csv_path)
         else:
             converted.append(f)
@@ -615,7 +620,8 @@ Examples:
         sys.exit(1)
 
     # Find CSV files
-    csv_files = find_csv_files(args.csv)
+    xlsx_sheet = config.get("xlsx_sheet")
+    csv_files = find_csv_files(args.csv, xlsx_sheet=xlsx_sheet)
     if not csv_files:
         print(f"\n❌ Error: No CSV files found matching '{args.csv}'")
         sys.exit(1)

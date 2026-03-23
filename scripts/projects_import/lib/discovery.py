@@ -4,12 +4,16 @@ from .client import LinearClient
 
 # GraphQL Queries
 DISCOVER_TEAMS_QUERY = """
-query DiscoverTeams {
-  teams(first: 250) {
+query DiscoverTeams($after: String) {
+  teams(first: 250, after: $after) {
     nodes {
       id
       name
       key
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
     }
   }
 }
@@ -124,6 +128,26 @@ query DiscoverUsers($after: String) {
 }
 """
 
+DISCOVER_INITIATIVES_QUERY = """
+query DiscoverInitiatives($after: String) {
+  initiatives(first: 250, after: $after) {
+    nodes {
+      id
+      name
+      projects {
+        nodes {
+          id
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+"""
+
 FETCH_EXISTING_PROJECTS_QUERY = """
 query FetchExistingProjects($teamId: String!, $after: String) {
   team(id: $teamId) {
@@ -191,6 +215,9 @@ class WorkspaceConfig:
         # Deduplication data
         self.existing_projects = {}  # lowercase project name -> project id
         self.existing_issues = {}  # project_id -> {lowercase_title: issue_id}
+        
+        # Initiatives (lowercase name -> {id, project_ids})
+        self.initiatives = {}
         
         # Per-team state cache (for hierarchical mode with multiple teams)
         self._team_states = {}  # team_id -> {state_name: state_id}
@@ -292,20 +319,29 @@ def discover_workspace(client: LinearClient, config: dict) -> WorkspaceConfig:
     
     print("\n🔍 Discovering workspace configuration...")
     
-    # Step 1: Fetch all teams
+    # Step 1: Fetch all teams (paginated)
     print("  Fetching teams...")
-    teams_data = client.execute(DISCOVER_TEAMS_QUERY)
-    for team in teams_data.get("teams", {}).get("nodes", []):
-        workspace.teams[team["key"]] = {
-            "id": team["id"],
-            "name": team["name"],
-            "key": team["key"],
-        }
-        workspace.teams_by_name[team["name"].lower()] = team["id"]
-        if team["key"] == parent_key:
-            workspace.parent_team_id = team["id"]
-        if team["key"] == target_key:
-            workspace.target_team_id = team["id"]
+    after_cursor = None
+    while True:
+        variables = {"after": after_cursor} if after_cursor else {}
+        teams_data = client.execute(DISCOVER_TEAMS_QUERY, variables)
+        teams_page = teams_data.get("teams", {})
+        for team in teams_page.get("nodes", []):
+            workspace.teams[team["key"]] = {
+                "id": team["id"],
+                "name": team["name"],
+                "key": team["key"],
+            }
+            workspace.teams_by_name[team["name"].lower()] = team["id"]
+            if team["key"] == parent_key:
+                workspace.parent_team_id = team["id"]
+            if team["key"] == target_key:
+                workspace.target_team_id = team["id"]
+        page_info = teams_page.get("pageInfo", {})
+        if page_info.get("hasNextPage") and page_info.get("endCursor"):
+            after_cursor = page_info["endCursor"]
+        else:
+            break
 
     # Step 2: Fetch templates from target team
     if workspace.target_team_id:
@@ -462,7 +498,36 @@ def discover_workspace(client: LinearClient, config: dict) -> WorkspaceConfig:
         else:
             break
 
-    # Step 7: Fetch existing projects for deduplication (workspace-wide,
+    # Step 7: Fetch initiatives (paginated) for parent-initiative matching.
+    # Gracefully skip if the API key lacks the initiative:read scope.
+    print("  Fetching initiatives...")
+    try:
+        after_cursor = None
+        while True:
+            variables = {"after": after_cursor} if after_cursor else {}
+            init_data = client.execute(DISCOVER_INITIATIVES_QUERY, variables)
+            init_page = init_data.get("initiatives", {})
+            for init in init_page.get("nodes", []):
+                project_ids = {p["id"] for p in init.get("projects", {}).get("nodes", [])}
+                workspace.initiatives[init["name"].strip().lower()] = {
+                    "id": init["id"],
+                    "name": init["name"],
+                    "project_ids": project_ids,
+                }
+            page_info = init_page.get("pageInfo", {})
+            if page_info.get("hasNextPage") and page_info.get("endCursor"):
+                after_cursor = page_info["endCursor"]
+            else:
+                break
+        if workspace.initiatives:
+            print(f"    Found {len(workspace.initiatives)} initiatives")
+    except Exception as e:
+        if "forbidden" in str(e).lower() or "scope" in str(e).lower():
+            print("    ⚠️  Skipped (API key lacks initiative:read scope)")
+        else:
+            print(f"    ⚠️  Skipped ({str(e)[:80]})")
+
+    # Step 8: Fetch existing projects for deduplication (workspace-wide,
     # because projects may not yet be associated with the target team)
     print("  Fetching existing projects for deduplication...")
     workspace.existing_projects = fetch_all_projects(client)

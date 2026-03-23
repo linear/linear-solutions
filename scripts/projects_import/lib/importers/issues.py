@@ -567,6 +567,16 @@ def prepare_issues_from_csv(csv_data: list, config: dict, workspace: WorkspaceCo
     description_extras = issues_config.get("description_extras", [])
     label_groups = issues_config.get("label_groups", [])
     extract_urls = issues_config.get("extract_urls_from_title", False)
+
+    # Resolve a fixed target project (all issues go to one existing project)
+    target_project_name = issues_config.get("target_project")
+    target_project_id = None
+    if target_project_name:
+        target_project_id = workspace.existing_projects.get(target_project_name.strip().lower())
+        if target_project_id:
+            print(f"  Target project resolved: '{target_project_name}' -> {target_project_id}")
+        else:
+            print(f"  ⚠️  Target project '{target_project_name}' not found in workspace")
     
     issues = []
     
@@ -694,6 +704,7 @@ def prepare_issues_from_csv(csv_data: list, config: dict, workspace: WorkspaceCo
         issues.append({
             "title": title,
             "project": project,
+            "project_id": target_project_id,
             "assignee": assignee,
             "assignee_id": assignee_id,
             "due_date": due_date,

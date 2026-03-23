@@ -21,7 +21,21 @@ def parse_date(date_str: str) -> str:
     if not date_str or not date_str.strip():
         return None
     
-    date_str = date_str.strip()
+    date_str = date_str.strip().strip('"')
+
+    # Skip known non-date keywords
+    lower = date_str.lower()
+    if lower in ("tbd", "done", "not needed", "na", "n/a", "no ux needed",
+                  "not needed", "no term sheet needed"):
+        return None
+    if lower.startswith(("❌", "🚀 shipped", "🚢 ship")):
+        return None
+
+    # Strip leading day-of-week prefix (e.g. "Mon ", "Tue ")
+    date_str = re.sub(r'^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+', '', date_str, flags=re.IGNORECASE)
+
+    # Strip leading "Before " prefix (e.g. "Before Nov 2025")
+    date_str = re.sub(r'^Before\s+', '', date_str, flags=re.IGNORECASE)
     
     # Try various formats
     formats = [
@@ -58,7 +72,87 @@ def parse_date(date_str: str) -> str:
         except ValueError:
             continue
 
+    # Month + year (e.g. "February 2026", "Feb 2026") → first of month
+    month_year_formats = [
+        "%B %Y",     # February 2026
+        "%b %Y",     # Feb 2026
+        "%B'%Y",     # February'2026
+        "%b'%Y",     # Feb'2026
+    ]
+    for fmt in month_year_formats:
+        try:
+            dt = datetime.strptime(date_str, fmt)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    # Quarter notation (e.g. "Q2 2026", "Q3 2025") → first day of quarter
+    quarter_match = re.match(r'^Q([1-4])\s*[\'"]?(\d{4})$', date_str, re.IGNORECASE)
+    if quarter_match:
+        q, year = int(quarter_match.group(1)), int(quarter_match.group(2))
+        month = {1: 1, 2: 4, 3: 7, 4: 10}[q]
+        return f"{year}-{month:02d}-01"
+
+    # Half-year notation (e.g. "H1 2026", "H2 2025") → first day of half
+    half_match = re.match(r'^H([12])\s*[\'"]?(\d{4})$', date_str, re.IGNORECASE)
+    if half_match:
+        h, year = int(half_match.group(1)), int(half_match.group(2))
+        month = 1 if h == 1 else 7
+        return f"{year}-{month:02d}-01"
+
     return None
+
+
+def parse_last_date(raw_str: str) -> str:
+    """Parse a potentially comma-separated multi-date string, returning the last parseable date.
+
+    Handles quoted dates (``"Mon Mar 23, 2026"``), non-date keywords
+    (``Done``, ``TBD``), and mixed formats like::
+
+        Before Nov 2025, Done, "Mon Jan 19, 2026"
+        "Mon Jan 12, 2026", "Mon Mar 2, 2026", Done
+    """
+    if not raw_str or not raw_str.strip():
+        return None
+
+    raw_str = raw_str.strip()
+
+    # Fast path: no comma and no quote → single value
+    if ',' not in raw_str and '"' not in raw_str:
+        return parse_date(raw_str)
+
+    # Tokenize respecting quoted strings (which may contain commas)
+    tokens = []
+    i = 0
+    while i < len(raw_str):
+        while i < len(raw_str) and raw_str[i] in (' ', ','):
+            i += 1
+        if i >= len(raw_str):
+            break
+
+        if raw_str[i] == '"':
+            end = raw_str.find('"', i + 1)
+            if end == -1:
+                tokens.append(raw_str[i + 1:].strip())
+                break
+            tokens.append(raw_str[i + 1:end].strip())
+            i = end + 1
+        else:
+            end = i
+            while end < len(raw_str) and raw_str[end] not in (',', '"'):
+                end += 1
+            token = raw_str[i:end].strip()
+            if token:
+                tokens.append(token)
+            i = end
+
+    last_date = None
+    for token in tokens:
+        parsed = parse_date(token)
+        if parsed:
+            last_date = parsed
+
+    return last_date
 
 
 def normalize_status(status: str, status_map: dict) -> str:
@@ -152,6 +246,76 @@ def priority_from_ranking(ranking_str: str, priority_ranges: list, default: int 
             return bucket.get("priority", default)
     
     return default
+
+
+def convert_xlsx_to_csv(xlsx_path: str, sheet_name: str = None) -> str:
+    """Convert an Excel (.xlsx) file to CSV, returning the path to the new CSV.
+
+    Requires the ``openpyxl`` package (``pip install openpyxl``).
+    Converts the sheet named *sheet_name*, or the active sheet if not given.
+    The output CSV is written next to the source file with a ``.csv``
+    extension (with sheet name suffix when a non-default sheet is selected).
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise ImportError(
+            "Excel support requires openpyxl. "
+            "Install with: pip install openpyxl"
+        )
+
+    base = os.path.splitext(xlsx_path)[0]
+    if sheet_name:
+        safe_name = re.sub(r'[^\w\s-]', '', sheet_name).strip().replace(' ', '_')
+        csv_path = f"{base}_{safe_name}.csv"
+    else:
+        csv_path = base + ".csv"
+
+    print(f"  Converting {os.path.basename(xlsx_path)} to CSV...")
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    if sheet_name:
+        if sheet_name not in wb.sheetnames:
+            raise ValueError(
+                f"Sheet '{sheet_name}' not found. "
+                f"Available sheets: {', '.join(wb.sheetnames)}"
+            )
+        ws = wb[sheet_name]
+        print(f"  Using sheet: {sheet_name}")
+    else:
+        ws = wb.active
+
+    headers = []
+    for cell in ws[1]:
+        val = cell.value
+        if val is not None:
+            header = " ".join(str(val).split())
+            headers.append(header)
+        else:
+            headers.append("")
+
+    # Trim trailing empty headers
+    while headers and not headers[-1]:
+        headers.pop()
+
+    num_cols = len(headers)
+    row_count = 0
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        for row in ws.iter_rows(min_row=2, max_col=num_cols, values_only=True):
+            # Skip completely empty rows
+            if not any(cell is not None and str(cell).strip() for cell in row):
+                continue
+            row_data = {}
+            for col_idx, header in enumerate(headers):
+                cell = row[col_idx] if col_idx < len(row) else None
+                row_data[header] = str(cell) if cell is not None else ""
+            writer.writerow(row_data)
+            row_count += 1
+
+    print(f"  Converted {row_count} rows -> {os.path.basename(csv_path)}")
+    return csv_path
 
 
 def convert_numbers_to_csv(numbers_path: str) -> str:
