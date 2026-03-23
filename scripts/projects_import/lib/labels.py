@@ -255,6 +255,47 @@ def ensure_label_groups(
                     print(f"  ✗ Error creating group {group_name}: {e}")
                     results["errors"].append({"group": group_name, "error": error_str})
     
+    # Process static labels (standalone labels applied to every item)
+    static_labels = project_config.get("static_labels", [])
+    for label_name in static_labels:
+        if not label_name:
+            continue
+
+        if label_name in workspace.project_labels:
+            print(f"  ✓ {label_name}: Static label exists")
+            results["labels_skipped"] += 1
+            continue
+
+        if dry_run:
+            print(f"  → Would create static label: {label_name}")
+            results["labels_created"] += 1
+            workspace.project_labels[label_name] = {
+                "id": f"dry-run-label-{label_name}",
+                "isGroup": False,
+                "children": {}
+            }
+        else:
+            try:
+                result = client.execute(CREATE_STANDALONE_PROJECT_LABEL_MUTATION, {
+                    "name": label_name
+                })
+                if result.get("projectLabelCreate", {}).get("success"):
+                    label = result["projectLabelCreate"]["projectLabel"]
+                    print(f"  ✓ Created static label: {label_name}")
+                    results["labels_created"] += 1
+                    workspace.project_labels[label_name] = {
+                        "id": label["id"],
+                        "isGroup": False,
+                        "children": {}
+                    }
+                else:
+                    print(f"  ✗ Failed to create static label: {label_name}")
+                    results["errors"].append({"label": label_name, "error": "Unknown error"})
+                client.rate_limit_delay()
+            except Exception as e:
+                print(f"  ✗ Error creating static label {label_name}: {e}")
+                results["errors"].append({"label": label_name, "error": str(e)})
+
     # Process conditional labels (standalone labels, not groups)
     for cl in conditional_labels:
         label_name = cl.get("label_name")
@@ -592,6 +633,7 @@ def ensure_issue_label_groups(
     """
     issues_config = config.get("issues", {})
     label_groups = issues_config.get("label_groups", [])
+    static_labels = issues_config.get("static_labels", [])
 
     results = {
         "groups_created": 0,
@@ -601,7 +643,7 @@ def ensure_issue_label_groups(
         "errors": [],
     }
 
-    if not label_groups:
+    if not label_groups and not static_labels:
         return results
 
     print("\n🏷️  Ensuring issue label groups exist...")
@@ -718,6 +760,56 @@ def ensure_issue_label_groups(
                 else:
                     print(f"  ✗ Error creating group {group_name}: {e}")
                     results["errors"].append({"group": group_name, "error": error_str})
+
+    # Process static labels (standalone labels applied to every issue)
+    for label_name in static_labels:
+        if not label_name:
+            continue
+
+        if label_name in workspace.issue_labels:
+            print(f"  ✓ {label_name}: Static issue label exists")
+            results["labels_skipped"] += 1
+            continue
+
+        existing_id = _find_label_by_name(label_name, workspace.issue_labels)
+        if existing_id:
+            workspace.issue_labels[label_name] = {
+                "id": existing_id,
+                "isGroup": False,
+                "children": {},
+            }
+            results["labels_skipped"] += 1
+            continue
+
+        if dry_run:
+            print(f"  → Would create static issue label: {label_name}")
+            results["labels_created"] += 1
+            workspace.issue_labels[label_name] = {
+                "id": f"dry-run-label-{label_name}",
+                "isGroup": False,
+                "children": {},
+            }
+        else:
+            try:
+                result = client.execute(CREATE_STANDALONE_ISSUE_LABEL_MUTATION, {
+                    "name": label_name,
+                })
+                if result.get("issueLabelCreate", {}).get("success"):
+                    label = result["issueLabelCreate"]["issueLabel"]
+                    print(f"  ✓ Created static issue label: {label_name}")
+                    results["labels_created"] += 1
+                    workspace.issue_labels[label_name] = {
+                        "id": label["id"],
+                        "isGroup": False,
+                        "children": {},
+                    }
+                else:
+                    print(f"  ✗ Failed to create static issue label: {label_name}")
+                    results["errors"].append({"label": label_name, "error": "Unknown error"})
+                client.rate_limit_delay()
+            except Exception as e:
+                print(f"  ✗ Error creating static issue label {label_name}: {e}")
+                results["errors"].append({"label": label_name, "error": str(e)})
 
     if dry_run:
         print(f"\n  [DRY RUN] Would create {results['groups_created']} groups, {results['labels_created']} labels")

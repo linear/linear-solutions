@@ -365,6 +365,14 @@ def prepare_issues_from_hierarchical(
     status_map = issues_config.get("status_map", {})
     priority_ranges = issues_config.get("priority_ranges", [])
     default_priority = issues_config.get("default_priority", 0)
+    static_labels = issues_config.get("static_labels", [])
+    
+    # Resolve static label IDs (standalone labels applied to every issue)
+    static_label_ids = []
+    for sl_name in static_labels:
+        label_info = workspace.issue_labels.get(sl_name)
+        if label_info and not label_info.get("isGroup"):
+            static_label_ids.append(label_info["id"])
     
     issues = []
     
@@ -442,6 +450,7 @@ def prepare_issues_from_hierarchical(
             "dependencies": None,
             "cycle_id": None,
             "source_file": None,
+            "label_ids": list(static_label_ids) if static_label_ids else None,
         })
     
     return issues

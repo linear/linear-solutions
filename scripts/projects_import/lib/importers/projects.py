@@ -511,9 +511,6 @@ def import_projects(
             description = project_data.get("description")
             if not description and full_name != name:
                 description = f"**Full Name:** {full_name}"
-            if description and len(description) > 255:
-                description = description[:252] + "..."
-            
             variables = {
                 "name": name,
                 "teamIds": team_ids,
@@ -820,10 +817,7 @@ def prepare_projects_from_csv(csv_data: list, config: dict, workspace: Workspace
             if val:
                 desc_parts.append(f"**{label_text}:** {val}")
         if desc_parts:
-            description = "\n\n".join(desc_parts)
-            if len(description) > 255:
-                description = description[:252] + "..."
-            project["description"] = description
+            project["description"] = "\n\n".join(desc_parts)
 
         # Single external link (legacy)
         link_col = columns.get("link_url")
@@ -1043,6 +1037,14 @@ def prepare_projects_from_hierarchical(
     priority_ranges = project_config.get("priority_ranges", [])
     default_priority = project_config.get("default_priority", 0)
     label_groups = project_config.get("label_groups", [])
+    static_labels = project_config.get("static_labels", [])
+    
+    # Resolve static label IDs (standalone labels applied to every project)
+    static_label_ids = []
+    for sl_name in static_labels:
+        label_info = workspace.project_labels.get(sl_name)
+        if label_info and not label_info.get("isGroup"):
+            static_label_ids.append(label_info["id"])
     
     unmatched_leads = set()
     projects = []
@@ -1138,7 +1140,6 @@ def prepare_projects_from_hierarchical(
         if timeframe:
             desc_parts.append(f"**Timeframe:** {timeframe}")
         
-        # Store link URL for project resource (not in description - 255 char limit)
         link_url = row.get(link_col, "").strip() if link_col else ""
         if link_url and link_url.startswith("http"):
             project["link_url"] = link_url
@@ -1176,13 +1177,13 @@ def prepare_projects_from_hierarchical(
                         if label_id not in project["label_ids"]:
                             project["label_ids"].append(label_id)
         
-        # Build final description (after label loop may have added multi-value info)
         if desc_parts:
-            description = "\n\n".join(desc_parts)
-            # Linear project description max is 255 characters
-            if len(description) > 255:
-                description = description[:252] + "..."
-            project["description"] = description
+            project["description"] = "\n\n".join(desc_parts)
+        
+        # Add static labels (applied to every project)
+        for sl_id in static_label_ids:
+            if sl_id not in project["label_ids"]:
+                project["label_ids"].append(sl_id)
         
         projects.append(project)
     
@@ -1381,10 +1382,7 @@ def prepare_projects_from_parent_task(
                             project["label_ids"].append(label_id)
 
         if desc_parts:
-            description = "\n\n".join(desc_parts)
-            if len(description) > 255:
-                description = description[:252] + "..."
-            project["description"] = description
+            project["description"] = "\n\n".join(desc_parts)
 
         projects.append(project)
 
