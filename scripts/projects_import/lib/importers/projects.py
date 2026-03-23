@@ -1162,13 +1162,7 @@ def prepare_projects_from_hierarchical(
             if member_id:
                 project["member_ids"].append(member_id)
         
-        # Build content (full rich text) and description (short summary)
-        content_parts = []
-        if desc_col:
-            base_desc = row.get(desc_col, "").strip()
-            if base_desc:
-                content_parts.append(base_desc)
-        
+        # Build content: meta fields at top, then PB description below
         meta_parts = []
         parent_name = row.get(parent_name_col, "").strip() if parent_name_col else ""
         if parent_name:
@@ -1176,6 +1170,7 @@ def prepare_projects_from_hierarchical(
         
         team_list = row.get(team_list_col, "").strip() if team_list_col else ""
         if team_list:
+            team_list = ", ".join(t.strip() for t in team_list.split(","))
             meta_parts.append(f"**Contributing Teams:** {team_list}")
         
         if feature_owner:
@@ -1190,10 +1185,17 @@ def prepare_projects_from_hierarchical(
             label_text = extra.get("label", col_name)
             val = row.get(col_name, "").strip()
             if val:
+                if "," in val:
+                    val = ", ".join(v.strip() for v in val.split(","))
                 meta_parts.append(f"**{label_text}:** {val}")
         
+        content_parts = []
         if meta_parts:
-            content_parts.append("---\n" + "\n".join(meta_parts) if content_parts else "\n".join(meta_parts))
+            content_parts.append("\n".join(meta_parts))
+        if desc_col:
+            base_desc = row.get(desc_col, "").strip()
+            if base_desc:
+                content_parts.append(base_desc)
         
         link_url = row.get(link_col, "").strip() if link_col else ""
         if link_url and link_url.startswith("http"):
@@ -1233,9 +1235,6 @@ def prepare_projects_from_hierarchical(
         full_content = "\n\n".join(content_parts) if content_parts else None
         if full_content:
             project["content"] = full_content
-            project["description"] = "\n".join(meta_parts) if meta_parts else None
-        elif meta_parts:
-            project["description"] = "\n".join(meta_parts)
         
         # Add static labels (applied to every project)
         for sl_id in static_label_ids:
