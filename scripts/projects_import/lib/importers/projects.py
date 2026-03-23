@@ -8,6 +8,7 @@ CREATE_PROJECT_MUTATION = """
 mutation CreateProject(
   $name: String!,
   $description: String,
+  $content: String,
   $teamIds: [String!]!,
   $statusId: String,
   $priority: Int,
@@ -20,6 +21,7 @@ mutation CreateProject(
   projectCreate(input: {
     name: $name,
     description: $description,
+    content: $content,
     teamIds: $teamIds,
     statusId: $statusId,
     priority: $priority,
@@ -86,6 +88,17 @@ UPDATE_PROJECT_LABELS_MUTATION = """
 mutation UpdateProjectLabels($id: String!, $labelIds: [String!]!) {
   projectUpdate(id: $id, input: {
     labelIds: $labelIds
+  }) {
+    success
+  }
+}
+"""
+
+UPDATE_PROJECT_CONTENT_MUTATION = """
+mutation UpdateProjectContent($id: String!, $description: String, $content: String) {
+  projectUpdate(id: $id, input: {
+    description: $description,
+    content: $content
   }) {
     success
   }
@@ -256,6 +269,23 @@ def _update_existing_project(client: LinearClient, project_id: str, project_data
                 print(f"    🏷️  Updated {len(label_ids)} label(s)")
         except Exception as e:
             print(f"    ⚠️ Label update failed: {str(e)[:60]}")
+
+    content = project_data.get("content")
+    description = project_data.get("description")
+    if content or description:
+        try:
+            update_vars = {"id": project_id}
+            if description:
+                if len(description) > 255:
+                    description = description[:252] + "..."
+                update_vars["description"] = description
+            if content:
+                update_vars["content"] = content
+            result = client.execute(UPDATE_PROJECT_CONTENT_MUTATION, update_vars)
+            if result.get("projectUpdate", {}).get("success"):
+                print(f"    📝 Updated description/content")
+        except Exception as e:
+            print(f"    ⚠️ Content update failed: {str(e)[:60]}")
 
     _add_external_links(client, project_id, project_data)
     _add_milestones(client, project_id, project_data)
@@ -509,14 +539,21 @@ def import_projects(
 
         try:
             description = project_data.get("description")
+            content = project_data.get("content")
             if not description and full_name != name:
                 description = f"**Full Name:** {full_name}"
+            if description and len(description) > 255:
+                if not content:
+                    content = description
+                description = description[:252] + "..."
             variables = {
                 "name": name,
                 "teamIds": team_ids,
             }
             if description:
                 variables["description"] = description
+            if content:
+                variables["content"] = content
             
             if project_data.get("status_id"):
                 variables["statusId"] = project_data["status_id"]
@@ -1016,6 +1053,7 @@ def prepare_projects_from_hierarchical(
     
     # Column mappings
     name_col = columns.get("name", "entity_name")
+    desc_col = columns.get("description")
     status_col = columns.get("status", "status_name")
     lead_col = columns.get("lead", "Owner")
     feature_owner_col = columns.get("feature_owner", "Feature Owner")
@@ -1027,6 +1065,7 @@ def prepare_projects_from_hierarchical(
     team_list_col = columns.get("team_list")
     timeframe_col = columns.get("timeframe")
     parent_name_col = columns.get("parent_name", "parent_name")
+    description_extras = project_config.get("description_extras", [])
     
     # Team column for assignment
     team_col = team_config.get("team_column")
@@ -1123,22 +1162,38 @@ def prepare_projects_from_hierarchical(
             if member_id:
                 project["member_ids"].append(member_id)
         
-        # Build description with metadata
-        desc_parts = []
+        # Build content (full rich text) and description (short summary)
+        content_parts = []
+        if desc_col:
+            base_desc = row.get(desc_col, "").strip()
+            if base_desc:
+                content_parts.append(base_desc)
+        
+        meta_parts = []
         parent_name = row.get(parent_name_col, "").strip() if parent_name_col else ""
         if parent_name:
-            desc_parts.append(f"**Parent:** {parent_name}")
+            meta_parts.append(f"**Parent:** {parent_name}")
         
         team_list = row.get(team_list_col, "").strip() if team_list_col else ""
         if team_list:
-            desc_parts.append(f"**Contributing Teams:** {team_list}")
+            meta_parts.append(f"**Contributing Teams:** {team_list}")
         
         if feature_owner:
-            desc_parts.append(f"**Feature Owner:** {feature_owner}")
+            meta_parts.append(f"**Feature Owner:** {feature_owner}")
         
         timeframe = row.get(timeframe_col, "").strip() if timeframe_col else ""
         if timeframe:
-            desc_parts.append(f"**Timeframe:** {timeframe}")
+            meta_parts.append(f"**Timeframe:** {timeframe}")
+        
+        for extra in description_extras:
+            col_name = extra.get("column")
+            label_text = extra.get("label", col_name)
+            val = row.get(col_name, "").strip()
+            if val:
+                meta_parts.append(f"**{label_text}:** {val}")
+        
+        if meta_parts:
+            content_parts.append("---\n" + "\n".join(meta_parts) if content_parts else "\n".join(meta_parts))
         
         link_url = row.get(link_col, "").strip() if link_col else ""
         if link_url and link_url.startswith("http"):
@@ -1158,11 +1213,9 @@ def prepare_projects_from_hierarchical(
             
             if multi_value:
                 values = [v.strip() for v in raw_value.split(separator) if v.strip()]
-                # Apply only the first value as the label (Linear allows one per group)
                 first_value = values[0] if values else None
-                # If there are multiple values, note the full list in description
                 if len(values) > 1:
-                    desc_parts.append(f"**{group_name}:** {', '.join(values)}")
+                    content_parts.append(f"**{group_name}:** {', '.join(values)}")
                 if first_value and group_name in workspace.project_labels:
                     children = workspace.project_labels[group_name].get("children", {})
                     if first_value in children:
@@ -1177,8 +1230,12 @@ def prepare_projects_from_hierarchical(
                         if label_id not in project["label_ids"]:
                             project["label_ids"].append(label_id)
         
-        if desc_parts:
-            project["description"] = "\n\n".join(desc_parts)
+        full_content = "\n\n".join(content_parts) if content_parts else None
+        if full_content:
+            project["content"] = full_content
+            project["description"] = "\n".join(meta_parts) if meta_parts else None
+        elif meta_parts:
+            project["description"] = "\n".join(meta_parts)
         
         # Add static labels (applied to every project)
         for sl_id in static_label_ids:

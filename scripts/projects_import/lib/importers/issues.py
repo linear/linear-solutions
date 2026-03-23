@@ -344,6 +344,7 @@ def prepare_issues_from_hierarchical(
     
     # Column mappings
     title_col = columns.get("title", "entity_name")
+    desc_col = columns.get("description")
     assignee_col = columns.get("assignee")
     status_col = columns.get("status")
     due_date_col = columns.get("due_date")
@@ -352,6 +353,7 @@ def prepare_issues_from_hierarchical(
     link_title = columns.get("link_title", "External Link")
     team_list_col = columns.get("team_list")
     parent_name_col = columns.get("parent_name", "parent_name")
+    description_extras = issues_config.get("description_extras", [])
     
     # Hierarchy columns
     entity_uuid_col = hierarchy.get("entity_uuid_column", "entity_uuid")
@@ -417,17 +419,31 @@ def prepare_issues_from_hierarchical(
         if status_value and status_map:
             state_name = status_map.get(status_value, status_value)
         
-        # Build description
+        # Build description: base content first, then metadata
         desc_parts = []
+        if desc_col:
+            base_desc = row.get(desc_col, "").strip()
+            if base_desc:
+                desc_parts.append(base_desc)
+        
+        meta_parts = []
         team_list = row.get(team_list_col, "").strip() if team_list_col else ""
         if team_list:
-            desc_parts.append(f"**Contributing Teams:** {team_list}")
+            meta_parts.append(f"**Contributing Teams:** {team_list}")
         
-        # Link - include in description and as attachment
+        for extra in description_extras:
+            col_name = extra.get("column")
+            label_text = extra.get("label", col_name)
+            val = row.get(col_name, "").strip()
+            if val:
+                meta_parts.append(f"**{label_text}:** {val}")
+        
+        if meta_parts:
+            desc_parts.append("---\n" + "\n".join(meta_parts) if desc_parts else "\n".join(meta_parts))
+        
+        # Link - as attachment
         link_url = row.get(link_col, "").strip() if link_col else ""
         external_link = link_url if link_url and link_url.startswith("http") else None
-        if external_link:
-            desc_parts.append(f"**{link_title}:** [{external_link}]({external_link})")
         
         issues.append({
             "title": title,
