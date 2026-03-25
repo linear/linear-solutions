@@ -185,7 +185,7 @@ Supports name-based dependency resolution for blocking relations.
       "feature_owner": "Feature Owner",
       "start_date": "Timeframe start",
       "target_date": "Timeframe end",
-      "ranking": "Neo4j Ranking",
+      "ranking": "Ranking",
       "link": "pb_url",
       "link_title": "ProductBoard",
       "team_list": "Team",
@@ -228,7 +228,7 @@ Supports name-based dependency resolution for blocking relations.
       "assignee": "Feature Owner",
       "status": "status_name",
       "due_date": "Timeframe end",
-      "ranking": "Neo4j Ranking",
+      "ranking": "Ranking",
       "link": "pb_url",
       "link_title": "ProductBoard"
     },
