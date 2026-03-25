@@ -235,6 +235,8 @@ def run_hierarchical_import(client, workspace, config, all_csv_data, csv_files, 
             client, projects, workspace, config,
             dry_run=args.dry_run,
             batch_size=args.batch,
+            force_update=args.force_update,
+            allow_duplicates=args.allow_duplicates,
         )
 
     # Step 6: Build UUID→project_id map
@@ -461,6 +463,8 @@ def run_parent_task_import(client, workspace, config, all_csv_data, csv_files, a
             client, projects, workspace, config,
             dry_run=args.dry_run,
             batch_size=args.batch,
+            force_update=args.force_update,
+            allow_duplicates=args.allow_duplicates,
         )
 
     # Build name → project_id map
@@ -576,6 +580,8 @@ Examples:
     parser.add_argument("--batch", type=int, metavar="N", help="Import only first N items per category")
     parser.add_argument("--projects-only", action="store_true", help="Only import projects")
     parser.add_argument("--issues-only", action="store_true", help="Only import issues")
+    parser.add_argument("--force-update", action="store_true", help="Fully update existing projects (status, priority, dates, content)")
+    parser.add_argument("--allow-duplicates", action="store_true", help="Create duplicate projects instead of skipping, labeled 'Duplicate'")
     parser.add_argument("--verbose", action="store_true", help="Show detailed progress")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
@@ -655,6 +661,8 @@ Examples:
             print(f"     ✓ Successful: {project_results.get('success', 0)}")
             print(f"     ✗ Failed: {project_results.get('failed', 0)}")
             print(f"     ⏭ Skipped: {project_results.get('skipped', 0)}")
+            if project_results.get('duplicates', 0):
+                print(f"     🔁 Duplicates: {project_results.get('duplicates', 0)}")
 
         if not args.projects_only:
             print(f"\n  🏁 MILESTONES:")
@@ -742,6 +750,8 @@ Examples:
             print(f"     ✓ Successful: {project_results.get('success', 0)}")
             print(f"     ✗ Failed: {project_results.get('failed', 0)}")
             print(f"     ⏭ Skipped: {project_results.get('skipped', 0)}")
+            if project_results.get('duplicates', 0):
+                print(f"     🔁 Duplicates: {project_results.get('duplicates', 0)}")
 
         if not args.projects_only:
             print(f"\n  📝 ISSUES:")
@@ -910,6 +920,8 @@ Examples:
             config,
             dry_run=args.dry_run,
             batch_size=args.batch,
+            force_update=args.force_update,
+            allow_duplicates=args.allow_duplicates,
         )
 
     # Build project map for issue linking
@@ -946,6 +958,8 @@ Examples:
         print(f"     ✓ Successful: {project_results['success']}")
         print(f"     ✗ Failed: {project_results['failed']}")
         print(f"     ⏭ Skipped: {project_results['skipped']}")
+        if project_results.get('duplicates', 0):
+            print(f"     🔁 Duplicates: {project_results['duplicates']}")
     
     if not args.projects_only:
         print(f"\n  📝 ISSUES:")

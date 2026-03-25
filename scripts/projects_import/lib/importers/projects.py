@@ -209,9 +209,61 @@ mutation UpdateExternalLink($id: String!, $label: String!) {
 }
 """
 
+FORCE_UPDATE_PROJECT_MUTATION = """
+mutation ForceUpdateProject(
+  $id: String!,
+  $statusId: String,
+  $priority: Int,
+  $startDate: TimelessDate,
+  $targetDate: TimelessDate,
+  $content: String,
+  $description: String
+) {
+  projectUpdate(id: $id, input: {
+    statusId: $statusId,
+    priority: $priority,
+    startDate: $startDate,
+    targetDate: $targetDate,
+    content: $content,
+    description: $description
+  }) {
+    success
+  }
+}
+"""
 
-def _update_existing_project(client: LinearClient, project_id: str, project_data: dict, target_team_id: str = None):
+
+def _update_existing_project(client: LinearClient, project_id: str, project_data: dict, target_team_id: str = None, force_update: bool = False):
     """Update lead, members, links, and team association on an existing project."""
+    if force_update:
+        update_vars = {"id": project_id}
+        if project_data.get("status_id"):
+            update_vars["statusId"] = project_data["status_id"]
+        if project_data.get("priority") is not None:
+            update_vars["priority"] = project_data["priority"]
+        if project_data.get("start_date"):
+            update_vars["startDate"] = project_data["start_date"]
+        if project_data.get("target_date"):
+            update_vars["targetDate"] = project_data["target_date"]
+        content = project_data.get("content")
+        description = project_data.get("description")
+        if description and len(description) > 255:
+            if not content:
+                content = description
+            description = description[:252] + "..."
+        if content:
+            update_vars["content"] = content
+        if description:
+            update_vars["description"] = description
+        if len(update_vars) > 1:
+            try:
+                result = client.execute(FORCE_UPDATE_PROJECT_MUTATION, update_vars)
+                if result.get("projectUpdate", {}).get("success"):
+                    fields = [k for k in update_vars if k != "id"]
+                    print(f"    🔄 Force-updated: {', '.join(fields)}")
+            except Exception as e:
+                print(f"    ⚠️ Force update failed: {str(e)[:80]}")
+
     # Ensure the target team is associated with the project so issues can be linked
     if target_team_id:
         try:
@@ -406,6 +458,8 @@ def import_projects(
     config: dict,
     dry_run: bool = False,
     batch_size: int = None,
+    force_update: bool = False,
+    allow_duplicates: bool = False,
 ) -> dict:
     """Import projects into Linear."""
     
@@ -413,12 +467,33 @@ def import_projects(
         "success": 0,
         "failed": 0,
         "skipped": 0,
+        "duplicates": 0,
         "errors": [],
         "created_projects": {},  # name -> id mapping for issue linking
     }
 
     project_config = config.get("projects", {})
     labels_config = config.get("labels", {})
+
+    duplicate_label_id = None
+    if allow_duplicates:
+        dup_label = workspace.project_labels.get("Duplicate")
+        if dup_label and not dup_label.get("isGroup"):
+            duplicate_label_id = dup_label["id"]
+        elif not dry_run:
+            try:
+                from ..labels import CREATE_STANDALONE_PROJECT_LABEL_MUTATION
+                result = client.execute(CREATE_STANDALONE_PROJECT_LABEL_MUTATION, {"name": "Duplicate"})
+                if result.get("projectLabelCreate", {}).get("success"):
+                    label = result["projectLabelCreate"]["projectLabel"]
+                    duplicate_label_id = label["id"]
+                    workspace.project_labels["Duplicate"] = {"id": label["id"], "isGroup": False, "children": {}}
+                    print("🏷️  Created 'Duplicate' label for duplicate tracking")
+            except Exception as e:
+                print(f"⚠️ Could not create 'Duplicate' label: {str(e)[:80]}")
+        else:
+            duplicate_label_id = "dry-run-duplicate-label"
+            print("🏷️  Would create 'Duplicate' label for duplicate tracking")
 
     # Apply batch limit
     if batch_size:
@@ -439,20 +514,41 @@ def import_projects(
 
         # Check for duplicate - get existing project ID if it exists
         existing_project_id = workspace.existing_projects.get(full_name.strip().lower())
+        is_duplicate = False
         if existing_project_id:
-            print(f"  ⏭ Skipped (already exists)")
-            results["skipped"] += 1
-            results["created_projects"][full_name] = existing_project_id
-            if dry_run:
-                all_label_ids = list(project_data.get("label_ids", []))
-                for cond_id in project_data.get("conditional_label_ids", []):
-                    if cond_id and cond_id not in all_label_ids:
-                        all_label_ids.append(cond_id)
-                if all_label_ids:
-                    print(f"    → Would update {len(all_label_ids)} label(s)")
+            if allow_duplicates:
+                print(f"  🔁 Creating duplicate (original exists)")
+                is_duplicate = True
+                results["duplicates"] += 1
+            elif force_update:
+                print(f"  🔄 Updating (already exists)")
+                results["skipped"] += 1
+                results["created_projects"][full_name] = existing_project_id
+                if dry_run:
+                    all_label_ids = list(project_data.get("label_ids", []))
+                    for cond_id in project_data.get("conditional_label_ids", []):
+                        if cond_id and cond_id not in all_label_ids:
+                            all_label_ids.append(cond_id)
+                    if all_label_ids:
+                        print(f"    → Would update {len(all_label_ids)} label(s)")
+                    print(f"    → Would force-update status, priority, dates, content")
+                else:
+                    _update_existing_project(client, existing_project_id, project_data, target_team_id=workspace.target_team_id, force_update=True)
+                continue
             else:
-                _update_existing_project(client, existing_project_id, project_data, target_team_id=workspace.target_team_id)
-            continue
+                print(f"  ⏭ Skipped (already exists)")
+                results["skipped"] += 1
+                results["created_projects"][full_name] = existing_project_id
+                if dry_run:
+                    all_label_ids = list(project_data.get("label_ids", []))
+                    for cond_id in project_data.get("conditional_label_ids", []):
+                        if cond_id and cond_id not in all_label_ids:
+                            all_label_ids.append(cond_id)
+                    if all_label_ids:
+                        print(f"    → Would update {len(all_label_ids)} label(s)")
+                else:
+                    _update_existing_project(client, existing_project_id, project_data, target_team_id=workspace.target_team_id)
+                continue
 
         # Build team IDs - use per-project teams if available, otherwise fall back to workspace defaults
         team_ids = []
@@ -494,6 +590,9 @@ def import_projects(
         for cond_label_id in project_data.get("conditional_label_ids", []):
             if cond_label_id and cond_label_id not in label_ids:
                 label_ids.append(cond_label_id)
+
+        if is_duplicate and duplicate_label_id and duplicate_label_id not in label_ids:
+            label_ids.append(duplicate_label_id)
 
         if dry_run:
             lead = project_data.get("lead", "None")
@@ -579,8 +678,8 @@ def import_projects(
                 print(f"  ✓ Created: {project.get('url', project_id)}")
                 results["success"] += 1
                 results["created_projects"][full_name] = project_id
-                # Add to existing projects to prevent duplicates within same run
-                workspace.existing_projects[full_name.strip().lower()] = project_id
+                if not is_duplicate:
+                    workspace.existing_projects[full_name.strip().lower()] = project_id
                 
                 # Add project members via projectUpdate
                 member_ids = project_data.get("member_ids", [])

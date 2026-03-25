@@ -18,6 +18,8 @@ A config-driven CLI for importing projects, milestones, and issues from CSV/Exce
 - **Health tracking**: Maps source health statuses to Linear project health types and creates project updates
 - **Rate limiting**: Adaptive throttling with exponential backoff and automatic retry on 429s
 - **Deduplication**: Skips existing projects, milestones, and issues; idempotent re-runs update leads, members, labels, content, and links on existing projects
+- **Force update**: `--force-update` fully updates existing projects (status, priority, dates, content) instead of skipping
+- **Allow duplicates**: `--allow-duplicates` creates new projects even when a matching name exists, automatically applying a "Duplicate" label for tracking
 - **Team auto-creation**: Programmatically creates missing teams with unique key generation
 - **Milestone support**: Creates project milestones from configured columns (standard mode) or from hierarchy depth (parent-task mode)
 - **Blocking relations**: Imports dependency/blocking relationships between issues (UUID-based or name-based)
@@ -59,6 +61,8 @@ Optional:
   --discover          Discover and display workspace resources, then exit
   --dry-run           Preview what would be created without making changes
   --batch N           Limit to first N projects/issues (for testing)
+  --force-update      Fully update existing projects (status, priority, dates, content) instead of skipping
+  --allow-duplicates  Create duplicate projects instead of skipping, labeled "Duplicate"
   --projects-only     Only import projects, skip issues
   --issues-only       Only import issues (projects must already exist)
   --verbose           Show detailed API request/rate-limit logging
@@ -110,8 +114,8 @@ Supports name-based dependency resolution for blocking relations.
   "name": "My Team Import",
 
   "team": {
-    "parent_key": "MAPS",
-    "target_key": "TRAFFIC"
+    "parent_key": "PRNT",
+    "target_key": "CHLD"
   },
 
   "projects": {
@@ -160,7 +164,7 @@ Supports name-based dependency resolution for blocking relations.
 
 ```json
 {
-  "name": "Productboard Migration",
+  "name": "My Hierarchical Migration",
   "import_mode": "hierarchical",
   "xlsx_sheet": "Export Sheet Name",
 
@@ -186,8 +190,8 @@ Supports name-based dependency resolution for blocking relations.
       "start_date": "Timeframe start",
       "target_date": "Timeframe end",
       "ranking": "Ranking",
-      "link": "pb_url",
-      "link_title": "ProductBoard",
+      "link": "source_url",
+      "link_title": "Source System",
       "team_list": "Team",
       "timeframe": "Timeframe",
       "parent_name": "parent_name"
@@ -217,7 +221,7 @@ Supports name-based dependency resolution for blocking relations.
       { "column": "Eng Dir", "label": "Eng Director" },
       { "column": "Launch Tiers", "label": "Launch Tier" }
     ],
-    "static_labels": ["PB Import"]
+    "static_labels": ["Imported"]
   },
 
   "issues": {
@@ -229,8 +233,8 @@ Supports name-based dependency resolution for blocking relations.
       "status": "status_name",
       "due_date": "Timeframe end",
       "ranking": "Ranking",
-      "link": "pb_url",
-      "link_title": "ProductBoard"
+      "link": "source_url",
+      "link_title": "Source System"
     },
     "status_map": {
       "Backlog": "Backlog",
@@ -244,7 +248,7 @@ Supports name-based dependency resolution for blocking relations.
       { "max": 999, "priority": 4 }
     ],
     "default_priority": 0,
-    "static_labels": ["PB Import"]
+    "static_labels": ["Imported"]
   },
 
   "relations": {
@@ -457,6 +461,8 @@ All workspace users are fetched with pagination (no 250-user cap).
 Re-running the same import is safe:
 
 - **Existing projects** are skipped (matched by name), but leads, members, labels, content, and external links are still updated
+- **With `--force-update`**, existing projects also get their status, priority, dates, and content overwritten from the source data
+- **With `--allow-duplicates`**, existing projects are not skipped -- a new project is created with a "Duplicate" label applied automatically
 - **Existing milestones** are skipped (matched by name within project)
 - **Existing issues** are skipped (matched by title within project), but labels are updated if configured
 - **Label groups/labels** are only created if missing; static labels are created once and reused
