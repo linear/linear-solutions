@@ -81,10 +81,11 @@ def get_sub_labels(api_key: str, parent_label_id: str) -> list[dict]:
 
 
 def get_issues_with_label(api_key: str, label_id: str) -> list[dict]:
+    """Return all issues with the given label, including archived ones (marked via 'archivedAt')."""
     q = """
     query($filter: IssueFilter, $first: Int!, $after: String) {
-      issues(filter: $filter, first: $first, after: $after) {
-        nodes { id }
+      issues(filter: $filter, first: $first, after: $after, includeArchived: true) {
+        nodes { id archivedAt }
         pageInfo { hasNextPage endCursor }
       }
     }
@@ -130,11 +131,16 @@ def create_release(
         input_["stageId"] = stage_id
     if version is not None:
         input_["version"] = version
-    data = graphql(api_key, """
-    mutation($input: ReleaseCreateInput!) {
-      releaseCreate(input: $input) { success release { id name version } }
-    }
-    """, {"input": input_})
+    try:
+        data = graphql(api_key, """
+        mutation($input: ReleaseCreateInput!) {
+          releaseCreate(input: $input) { success release { id name version } }
+        }
+        """, {"input": input_})
+    except RuntimeError as e:
+        if "version" in str(e).lower() and ("taken" in str(e).lower() or "exists" in str(e).lower()):
+            return None  # version conflict — caller should look up existing release
+        raise
     if not data.get("releaseCreate", {}).get("success"):
         raise RuntimeError(f"releaseCreate failed: {data}")
     return data["releaseCreate"]["release"]
@@ -184,24 +190,26 @@ def main() -> None:
     sub_labels = get_sub_labels(api_key, parent_label_id)
     if not sub_labels:
         sys.exit("No sub-labels under parent label")
+    sub_labels.sort(key=lambda l: l["name"])
 
-    existing_releases: list[dict] = []
-    if not args.dry_run:
-        existing_releases = get_releases_in_pipeline(api_key, pipeline_id)
-    else:
-        print(f"Dry run: would create {len(sub_labels)} release(s) and add issues as follows:")
+    existing_releases = get_releases_in_pipeline(api_key, pipeline_id)
 
     releases_created = 0
     releases_reused = 0
     issues_linked = 0
     issues_skipped = 0
+    issues_archived_skipped = 0
     issue_errors: list[str] = []
 
     for lab in sub_labels:
         name = lab["name"]
         version = name  # version is set to the label name (unique per pipeline)
-        issues = get_issues_with_label(api_key, lab["id"])
-        print(f"{name}: {len(issues)} issue(s)")
+        all_issues = get_issues_with_label(api_key, lab["id"])
+        issues = [i for i in all_issues if not i.get("archivedAt")]
+        archived = len(all_issues) - len(issues)
+        issues_archived_skipped += archived
+        suffix = f" ({archived} archived, skipped)" if archived else ""
+        print(f"{name}: {len(issues)} issue(s){suffix}")
         if not args.dry_run:
             release = None
             for r in existing_releases:
@@ -215,8 +223,20 @@ def main() -> None:
                 release = create_release(
                     api_key, pipeline_id, name, stage_id=release_stage_id, version=version
                 )
-                existing_releases.append(release)
-                releases_created += 1
+                if release is None:
+                    # Version conflict — another release was created concurrently; re-fetch.
+                    existing_releases = get_releases_in_pipeline(api_key, pipeline_id)
+                    for r in existing_releases:
+                        if r.get("version") == version:
+                            release = r
+                            break
+                    if release is None:
+                        issue_errors.append(f"  {name}: could not create or find release with version '{version}'")
+                        continue
+                    releases_reused += 1
+                else:
+                    existing_releases.append(release)
+                    releases_created += 1
             else:
                 releases_reused += 1
             for issue in issues:
@@ -228,11 +248,23 @@ def main() -> None:
                 except RuntimeError as e:
                     issue_errors.append(f"  {name} / {issue['id']}: {e}")
 
-    if not args.dry_run:
+    total_issues = issues_linked + issues_skipped + len(issue_errors)
+    if args.dry_run:
+        existing_versions = {r.get("version") for r in existing_releases}
+        would_create = sum(1 for l in sub_labels if l["name"] not in existing_versions)
+        would_reuse = len(sub_labels) - would_create
+        print(
+            f"\nDry run summary: {len(sub_labels)} label(s), {would_create} release(s) to create, "
+            f"{would_reuse} already exist, {total_issues} issue(s) to link"
+            + (f", {issues_archived_skipped} archived issue(s) will be skipped" if issues_archived_skipped else "")
+            + "."
+        )
+    else:
         print(
             f"\nDone: {len(sub_labels)} label(s) processed, {releases_created} release(s) created, "
-            f"{releases_reused} reused, {issues_linked} issue(s) linked, {issues_skipped} skipped (already linked), "
-            f"{len(issue_errors)} error(s)."
+            f"{releases_reused} reused, {issues_linked} issue(s) linked, {issues_skipped} skipped (already linked)"
+            + (f", {issues_archived_skipped} archived issue(s) skipped" if issues_archived_skipped else "")
+            + f", {len(issue_errors)} error(s)."
         )
         if issue_errors:
             print("Failed issue associations:")
