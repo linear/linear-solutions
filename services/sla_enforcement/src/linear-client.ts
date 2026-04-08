@@ -490,6 +490,7 @@ export class LinearClient {
                 slaMediumRiskAt
                 slaHighRiskAt
                 slaBreachesAt
+                createdAt
                 labels {
                   nodes {
                     id
@@ -513,6 +514,7 @@ export class LinearClient {
           slaMediumRiskAt: issue.slaMediumRiskAt || null,
           slaHighRiskAt: issue.slaHighRiskAt || null,
           slaBreachesAt: issue.slaBreachesAt || null,
+          createdAt: issue.createdAt || null,
           labels: issue.labels?.nodes?.map((l: any) => ({
             id: l.id,
             name: l.name

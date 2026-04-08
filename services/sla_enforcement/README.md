@@ -15,6 +15,7 @@ A configurable Linear agent that protects issues from unauthorized changes. Auto
 |---------|-------------|
 | **Protected Labels** | Configure any labels (e.g., "Vulnerability", "Security Critical") that cannot be removed by unauthorized users |
 | **SLA Protection** | Monitors all 5 SLA fields: type, start date, medium risk, high risk, breach date |
+| **SLA Created-At Baseline** | Enforces that `slaStartedAt` always equals the issue's creation date — catches silent resets from priority changes or workflow triggers |
 | **Priority Protection** | Prevent unauthorized priority changes (Urgent, High, Normal, Low) |
 | **Label Hierarchy** | Detects labels in both top-level and label groups |
 | **Allowlist** | Define authorized users by email or Linear user ID |
@@ -70,7 +71,8 @@ Edit `config/config.json`:
   "protectedFields": {
     "label": true,
     "sla": true,
-    "priority": true
+    "priority": true,
+    "slaCreatedAtBaseline": false
   },
   "allowlist": [
     { "email": "security-lead@yourcompany.com", "name": "Security Lead" },
@@ -151,12 +153,27 @@ Add any label names you want to protect. Case-sensitive.
   "protectedFields": {
     "label": true,
     "sla": true,
-    "priority": true
+    "priority": true,
+    "slaCreatedAtBaseline": false
   }
 }
 ```
 
 Set individual fields to `false` to disable protection for that field type.
+
+#### `slaCreatedAtBaseline`
+
+When set to `true`, the agent enforces that `slaStartedAt` always equals the issue's `createdAt` (the date the issue was created in Linear). This is the strictest form of SLA clock protection.
+
+**Why this matters:** Linear can silently reset `slaStartedAt` when other fields change — for example, changing an issue's priority may trigger a workflow that recalculates and overwrites the SLA start date. The standard `sla` protection only catches changes that appear explicitly in the webhook's `updatedFrom` payload. `slaCreatedAtBaseline` catches *all* drift, including silent resets, by comparing the current `slaStartedAt` against the cached `createdAt` on every webhook.
+
+**How it works:**
+1. On startup, the agent fetches `createdAt` for every issue with a protected label and stores it as an immutable baseline in its cache.
+2. On every subsequent webhook for a protected issue, the agent compares `slaStartedAt` against the cached `createdAt`.
+3. If they differ and the actor is not in the allowlist, the agent reverts `slaStartedAt` back to `createdAt`.
+4. The baseline is never overwritten — even authorized changes do not update the `createdAt` target.
+
+**When to use:** Enable this when you need to guarantee that the SLA clock always reflects the true issue creation date and cannot be gamed by indirect changes (e.g., priority bumps, label swaps, or workflow triggers).
 
 ### Allowlist
 

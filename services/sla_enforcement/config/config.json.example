@@ -7,7 +7,8 @@
   "protectedFields": {
     "label": true,
     "sla": true,
-    "priority": true
+    "priority": true,
+    "slaCreatedAtBaseline": false
   },
   "allowlist": [
     {
