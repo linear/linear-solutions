@@ -52,6 +52,67 @@ from lib.teams import ensure_teams
 from lib.utils import extract_project_name_from_filename, convert_numbers_to_csv, convert_xlsx_to_csv
 
 
+def write_id_mapping_csv(
+    output_path: str,
+    all_csv_data: list,
+    uuid_to_project: dict,
+    issue_uuid_to_id: dict,
+    entity_type_col: str,
+    entity_uuid_col: str,
+    name_col: str,
+):
+    """Write a CSV that maps each ProductBoard entity to its Linear ID/URL."""
+    fieldnames = [
+        "entity_type",
+        "entity_name",
+        "productboard_uuid",
+        "linear_type",
+        "linear_id",
+        "linear_url",
+    ]
+
+    rows_written = 0
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for row in all_csv_data:
+            pb_uuid = row.get(entity_uuid_col, "").strip()
+            if not pb_uuid:
+                continue
+
+            entity_type = row.get(entity_type_col, "").strip()
+            entity_name = row.get(name_col, "").strip()
+
+            linear_type = None
+            linear_id = None
+            linear_url = None
+
+            if pb_uuid in uuid_to_project:
+                linear_type = "project"
+                linear_id = uuid_to_project[pb_uuid]
+                if linear_id and linear_id != "dry-run":
+                    linear_url = f"https://linear.app/project/{linear_id}"
+            elif pb_uuid in issue_uuid_to_id:
+                linear_type = "issue"
+                linear_id = issue_uuid_to_id[pb_uuid]
+
+            if not linear_id:
+                continue
+
+            writer.writerow({
+                "entity_type": entity_type,
+                "entity_name": entity_name,
+                "productboard_uuid": pb_uuid,
+                "linear_type": linear_type,
+                "linear_id": linear_id,
+                "linear_url": linear_url or "",
+            })
+            rows_written += 1
+
+    print(f"\n📄 Wrote {rows_written} ID mappings to {output_path}")
+
+
 def load_config(config_path: str) -> dict:
     """Load configuration file (YAML or JSON)."""
     with open(config_path, "r") as f:
@@ -82,7 +143,7 @@ def load_csv(csv_path: str) -> list:
     if csv_path.endswith(".tsv"):
         delimiter = "\t"
     
-    with open(csv_path, "r", encoding="utf-8") as f:
+    with open(csv_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
             rows.append(row)
@@ -138,6 +199,23 @@ def run_hierarchical_import(client, workspace, config, all_csv_data, csv_files, 
     parent_uuid_col = hierarchy.get("parent_uuid_column", "parent_entity_uuid")
     feature_type = hierarchy.get("feature_type", "Feature")
     subfeature_type = hierarchy.get("subfeature_type", "Subfeature")
+
+    # Resolve target team: direct ID > fallback name > discovery
+    direct_team_id = team_config.get("target_team_id")
+    if not workspace.target_team_id and direct_team_id:
+        workspace.target_team_id = direct_team_id
+        workspace.teams_by_name.setdefault("__direct__", direct_team_id)
+        print(f"\n🏢 Using configured team ID: {direct_team_id}")
+
+    fallback_team = team_config.get("fallback_team_name")
+    if not workspace.target_team_id and fallback_team:
+        fallback_id = workspace.teams_by_name.get(fallback_team.lower())
+        if fallback_id:
+            workspace.target_team_id = fallback_id
+            print(f"\n🏢 Using fallback team: {fallback_team}")
+        else:
+            print(f"\n⚠️  Fallback team '{fallback_team}' not found in workspace")
+            print(f"   Available teams: {', '.join(t['name'] for t in workspace.teams.values())}")
 
     # Split rows by entity type
     feature_rows = [r for r in all_csv_data if r.get(entity_type_col) == feature_type]
@@ -283,15 +361,16 @@ def run_hierarchical_import(client, workspace, config, all_csv_data, csv_files, 
     # Step 8: Create blocking relations
     relation_results = {"created": 0, "skipped": 0, "errors": []}
     relations_config = config.get("relations", {})
-    if relations_config.get("enabled") and not args.projects_only and not args.issues_only:
+    if relations_config.get("enabled") and not args.issues_only:
         # Build uuid→linear map for both projects and issues
         uuid_to_linear = {}
         for uuid, pid in uuid_to_project.items():
-            if pid and pid != "dry-run":
+            if pid:
                 uuid_to_linear[uuid] = ("project", pid)
-        for uuid, iid in issue_results.get("created_issues", {}).items():
-            if iid and iid != "dry-run":
-                uuid_to_linear[uuid] = ("issue", iid)
+        if not args.projects_only:
+            for uuid, iid in issue_results.get("created_issues", {}).items():
+                if iid:
+                    uuid_to_linear[uuid] = ("issue", iid)
 
         blocking_col = relations_config.get("blocking_column", "Is blocking ids")
         separator = relations_config.get("uuid_separator", ", ")
@@ -299,6 +378,18 @@ def run_hierarchical_import(client, workspace, config, all_csv_data, csv_files, 
         relation_results = create_issue_relations(
             client, all_csv_data, entity_uuid_col, blocking_col, separator,
             uuid_to_linear, dry_run=args.dry_run,
+        )
+
+    # Step 9: Write ID mapping CSV
+    if args.output_csv:
+        write_id_mapping_csv(
+            args.output_csv,
+            all_csv_data,
+            uuid_to_project,
+            issue_results.get("created_issues", {}),
+            entity_type_col,
+            entity_uuid_col,
+            name_col,
         )
 
     return label_results, project_results, issue_results, team_results, relation_results
@@ -584,6 +675,7 @@ Examples:
     parser.add_argument("--allow-duplicates", action="store_true", help="Create duplicate projects instead of skipping, labeled 'Duplicate'")
     parser.add_argument("--verbose", action="store_true", help="Show detailed progress")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+    parser.add_argument("--output-csv", metavar="FILE", help="Write a CSV mapping ProductBoard UUIDs to Linear IDs")
 
     args = parser.parse_args()
 

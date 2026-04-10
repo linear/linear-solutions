@@ -9,6 +9,77 @@ MAX_PROJECT_NAME_LENGTH = 80
 MAX_ISSUE_TITLE_LENGTH = 255
 
 
+_KNOWN_HTML_TAGS = frozenset([
+    'a', 'b', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4',
+    'h5', 'h6', 'hr', 'i', 'img', 'ins', 'li', 'ol', 'p', 'pre', 's',
+    'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'th', 'thead',
+    'tr', 'u', 'ul',
+])
+
+
+def strip_html_tags(text: str) -> str:
+    """Remove HTML tags from text while preserving non-HTML angle-bracket content.
+
+    Strips known HTML tags (``<span …>``, ``<p>``, ``<div>`` etc.) and any
+    tag whose attributes contain ``=`` (e.g. ``<span data-foo="bar">``).
+    Leaves Markdown auto-links (``<https://…>``) and plain angle-bracket
+    content (``<total entries>``) untouched.
+    """
+    if not text:
+        return text
+
+    def _replace_opening(m):
+        tag_name = m.group(1).lower()
+        attrs = m.group(2)
+        if tag_name in _KNOWN_HTML_TAGS:
+            return ''
+        if '=' in attrs:
+            return ''
+        return m.group(0)
+
+    text = re.sub(
+        r'<(?!https?://)([a-zA-Z][a-zA-Z0-9]*)(\b[^>]*)/?>',
+        _replace_opening,
+        text,
+    )
+    text = re.sub(r'</([a-zA-Z][a-zA-Z0-9]*)\s*>', lambda m: '' if m.group(1).lower() in _KNOWN_HTML_TAGS else m.group(0), text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text
+
+
+def parse_datetime(dt_str: str) -> str:
+    """Parse a date/time string to ISO 8601 format (``YYYY-MM-DDTHH:MM:SSZ``).
+
+    Handles common short formats found in ProductBoard exports such as
+    ``4/3/25 5:14`` or ``3/23/2026 16:15``.  Returns *None* if unparseable.
+    """
+    if not dt_str or not dt_str.strip():
+        return None
+
+    dt_str = dt_str.strip().strip('"')
+
+    formats = [
+        "%m/%d/%y %H:%M",       # 4/3/25 5:14
+        "%m/%d/%Y %H:%M",       # 3/23/2026 16:15
+        "%m/%d/%y %I:%M %p",    # 4/3/25 5:14 PM
+        "%m/%d/%Y %I:%M %p",    # 3/23/2026 5:14 PM
+        "%Y-%m-%d %H:%M:%S",    # 2026-03-23 16:15:00
+        "%Y-%m-%dT%H:%M:%S",    # 2026-03-23T16:15:00
+        "%Y-%m-%dT%H:%M:%SZ",   # 2026-03-23T16:15:00Z
+        "%m/%d/%y",              # 4/3/25
+        "%m/%d/%Y",              # 4/3/2025
+    ]
+
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(dt_str, fmt)
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            continue
+
+    return None
+
+
 def truncate_name(name: str, max_length: int = MAX_PROJECT_NAME_LENGTH) -> str:
     """Truncate a name to max length, adding ellipsis if needed."""
     if len(name) > max_length:

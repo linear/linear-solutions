@@ -2,7 +2,7 @@
 
 from ..client import LinearClient
 from ..discovery import WorkspaceConfig
-from ..utils import truncate_name, parse_date, parse_last_date, normalize_status, normalize_priority, priority_from_ranking, MAX_PROJECT_NAME_LENGTH
+from ..utils import truncate_name, parse_date, parse_last_date, parse_datetime, normalize_status, normalize_priority, priority_from_ranking, strip_html_tags, MAX_PROJECT_NAME_LENGTH
 
 CREATE_PROJECT_MUTATION = """
 mutation CreateProject(
@@ -451,6 +451,27 @@ def _add_external_links(client: LinearClient, project_id: str, project_data: dic
             print(f"    ⚠️ Link failed: {str(e)[:60]}")
 
 
+def _dedupe_labels_by_group(label_ids: list, workspace: WorkspaceConfig) -> list:
+    """Keep only the first label from each group to satisfy Linear's exclusivity rule."""
+    id_to_group = {}
+    for group_name, group_info in workspace.project_labels.items():
+        if not group_info.get("isGroup"):
+            continue
+        for child_name, child_id in group_info.get("children", {}).items():
+            id_to_group[child_id] = group_name
+
+    seen_groups = set()
+    result = []
+    for lid in label_ids:
+        group = id_to_group.get(lid)
+        if group:
+            if group in seen_groups:
+                continue
+            seen_groups.add(group)
+        result.append(lid)
+    return result
+
+
 def import_projects(
     client: LinearClient,
     projects: list,
@@ -594,6 +615,8 @@ def import_projects(
         if is_duplicate and duplicate_label_id and duplicate_label_id not in label_ids:
             label_ids.append(duplicate_label_id)
 
+        label_ids = _dedupe_labels_by_group(label_ids, workspace)
+
         if dry_run:
             lead = project_data.get("lead", "None")
             lead_id = project_data.get("lead_id")
@@ -621,7 +644,8 @@ def import_projects(
             
             if project_data.get("update_text"):
                 update_preview = project_data["update_text"][:50] + "..." if len(project_data.get("update_text", "")) > 50 else project_data.get("update_text", "")
-                print(f"  → Update: {update_preview}")
+                ts_display = f" @ {project_data['health_updated_at']}" if project_data.get("health_updated_at") else ""
+                print(f"  → Update: {update_preview}{ts_display}")
             
             if project_data.get("link_url"):
                 print(f"  → Link: {project_data['link_title'] or 'Link'} ({project_data['link_url'][:50]}...)")
@@ -709,6 +733,9 @@ def import_projects(
                 if health or update_text:
                     try:
                         body = _format_update_body(update_text) if update_text else f"Project status: {health}"
+                        health_ts = project_data.get("health_updated_at")
+                        if health_ts:
+                            body = f"*Original update: {health_ts}*\n\n{body}"
                         update_vars = {
                             "projectId": project_id,
                             "body": body
@@ -910,13 +937,45 @@ def prepare_projects_from_csv(csv_data: list, config: dict, workspace: Workspace
         for lg in label_groups:
             group_name = lg.get("group_name")
             col = lg.get("column")
+            if not col:
+                continue
+            lg_value_map = lg.get("value_map", {})
+            lg_filter_unmapped = lg.get("filter_unmapped", False)
+            multi_value = lg.get("multi_value", False)
+            separator = lg.get("separator", ",")
             value = row.get(col, "").strip()
             
-            if value and group_name in workspace.project_labels:
-                label_group = workspace.project_labels[group_name]
-                children = label_group.get("children", {})
-                if value in children:
-                    project["label_ids"].append(children[value])
+            if not value or group_name not in workspace.project_labels:
+                continue
+
+            children = workspace.project_labels[group_name].get("children", {})
+
+            if multi_value:
+                values = [v.strip() for v in value.split(separator) if v.strip()]
+                if lg_value_map:
+                    mapped = []
+                    for v in values:
+                        if v in lg_value_map:
+                            mv = lg_value_map[v]
+                            if mv not in mapped:
+                                mapped.append(mv)
+                        elif not lg_filter_unmapped:
+                            mapped.append(v)
+                    values = mapped
+                for v in values:
+                    if v in children:
+                        lid = children[v]
+                        if lid not in project["label_ids"]:
+                            project["label_ids"].append(lid)
+            else:
+                label_value = value
+                if lg_value_map:
+                    if value in lg_value_map:
+                        label_value = lg_value_map[value]
+                    elif lg_filter_unmapped:
+                        continue
+                if label_value in children:
+                    project["label_ids"].append(children[label_value])
         
         # Resolve conditional labels
         for cl in conditional_labels:
@@ -1164,6 +1223,10 @@ def prepare_projects_from_hierarchical(
     team_list_col = columns.get("team_list")
     timeframe_col = columns.get("timeframe")
     parent_name_col = columns.get("parent_name", "parent_name")
+    health_col = columns.get("health")
+    update_text_col = columns.get("update_text")
+    health_updated_at_col = columns.get("health_updated_at")
+    comment_col = columns.get("comment")
     description_extras = project_config.get("description_extras", [])
     
     # Team column for assignment
@@ -1260,6 +1323,18 @@ def prepare_projects_from_hierarchical(
             member_id = resolve_user_id(feature_owner, workspace)
             if member_id:
                 project["member_ids"].append(member_id)
+
+        # Health status and project update fields
+        if health_col:
+            project["health"] = row.get(health_col, "").strip()
+        if update_text_col:
+            raw_update = row.get(update_text_col, "").strip()
+            if raw_update:
+                project["update_text"] = strip_html_tags(raw_update)
+        if health_updated_at_col:
+            project["health_updated_at"] = parse_datetime(
+                row.get(health_updated_at_col, "")
+            )
         
         # Build content: meta fields at top, then PB description below
         meta_parts = []
@@ -1287,6 +1362,12 @@ def prepare_projects_from_hierarchical(
                 if "," in val:
                     val = ", ".join(v.strip() for v in val.split(","))
                 meta_parts.append(f"**{label_text}:** {val}")
+
+        # Append Comment field to description
+        if comment_col:
+            comment_val = row.get(comment_col, "").strip()
+            if comment_val:
+                meta_parts.append(f"**Comment:** {strip_html_tags(comment_val)}")
         
         content_parts = []
         if meta_parts:
@@ -1294,7 +1375,7 @@ def prepare_projects_from_hierarchical(
         if desc_col:
             base_desc = row.get(desc_col, "").strip()
             if base_desc:
-                content_parts.append(base_desc)
+                content_parts.append(strip_html_tags(base_desc))
         
         link_url = row.get(link_col, "").strip() if link_col else ""
         if link_url and link_url.startswith("http"):
@@ -1307,27 +1388,50 @@ def prepare_projects_from_hierarchical(
             col = lg.get("column")
             multi_value = lg.get("multi_value", False)
             separator = lg.get("separator", ",")
+            lg_value_map = lg.get("value_map", {})
+            lg_filter_unmapped = lg.get("filter_unmapped", False)
             
+            if not col:
+                continue
             raw_value = row.get(col, "").strip()
             if not raw_value:
                 continue
             
             if multi_value:
                 values = [v.strip() for v in raw_value.split(separator) if v.strip()]
-                first_value = values[0] if values else None
+                # Apply value_map to transform/filter values for label resolution
+                if lg_value_map:
+                    mapped_values = []
+                    for v in values:
+                        if v in lg_value_map:
+                            mv = lg_value_map[v]
+                            if mv not in mapped_values:
+                                mapped_values.append(mv)
+                        elif not lg_filter_unmapped:
+                            mapped_values.append(v)
+                    label_values = mapped_values
+                else:
+                    label_values = values
                 if len(values) > 1:
                     content_parts.append(f"**{group_name}:** {', '.join(values)}")
-                if first_value and group_name in workspace.project_labels:
-                    children = workspace.project_labels[group_name].get("children", {})
-                    if first_value in children:
-                        label_id = children[first_value]
-                        if label_id not in project["label_ids"]:
-                            project["label_ids"].append(label_id)
+                for lv in label_values:
+                    if group_name in workspace.project_labels:
+                        children = workspace.project_labels[group_name].get("children", {})
+                        if lv in children:
+                            label_id = children[lv]
+                            if label_id not in project["label_ids"]:
+                                project["label_ids"].append(label_id)
             else:
+                label_value = raw_value
+                if lg_value_map:
+                    if raw_value in lg_value_map:
+                        label_value = lg_value_map[raw_value]
+                    elif lg_filter_unmapped:
+                        continue
                 if group_name in workspace.project_labels:
                     children = workspace.project_labels[group_name].get("children", {})
-                    if raw_value in children:
-                        label_id = children[raw_value]
+                    if label_value in children:
+                        label_id = children[label_value]
                         if label_id not in project["label_ids"]:
                             project["label_ids"].append(label_id)
         
@@ -1511,28 +1615,50 @@ def prepare_projects_from_parent_task(
         for lg in label_groups:
             group_name = lg.get("group_name")
             col = lg.get("column")
+            if not col:
+                continue
             multi_value = lg.get("multi_value", False)
             separator = lg.get("separator", ",")
+            lg_value_map = lg.get("value_map", {})
+            lg_filter_unmapped = lg.get("filter_unmapped", False)
             raw_value = row.get(col, "").strip()
             if not raw_value:
                 continue
 
             if multi_value:
                 values = [v.strip() for v in raw_value.split(separator) if v.strip()]
-                first_value = values[0] if values else None
+                if lg_value_map:
+                    mapped = []
+                    for v in values:
+                        if v in lg_value_map:
+                            mv = lg_value_map[v]
+                            if mv not in mapped:
+                                mapped.append(mv)
+                        elif not lg_filter_unmapped:
+                            mapped.append(v)
+                    label_values = mapped
+                else:
+                    label_values = values
                 if len(values) > 1:
                     desc_parts.append(f"**{group_name}:** {', '.join(values)}")
-                if first_value and group_name in workspace.project_labels:
-                    children = workspace.project_labels[group_name].get("children", {})
-                    if first_value in children:
-                        label_id = children[first_value]
-                        if label_id not in project["label_ids"]:
-                            project["label_ids"].append(label_id)
+                for lv in label_values:
+                    if group_name in workspace.project_labels:
+                        children = workspace.project_labels[group_name].get("children", {})
+                        if lv in children:
+                            label_id = children[lv]
+                            if label_id not in project["label_ids"]:
+                                project["label_ids"].append(label_id)
             else:
+                label_value = raw_value
+                if lg_value_map:
+                    if raw_value in lg_value_map:
+                        label_value = lg_value_map[raw_value]
+                    elif lg_filter_unmapped:
+                        continue
                 if group_name in workspace.project_labels:
                     children = workspace.project_labels[group_name].get("children", {})
-                    if raw_value in children:
-                        label_id = children[raw_value]
+                    if label_value in children:
+                        label_id = children[label_value]
                         if label_id not in project["label_ids"]:
                             project["label_ids"].append(label_id)
 

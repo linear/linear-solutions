@@ -84,8 +84,48 @@ def ensure_label_groups(
         column = lg.get("column")
         multi_value = lg.get("multi_value", False)
         separator = lg.get("separator", ",")
+        value_map = lg.get("value_map", {})
+        filter_unmapped = lg.get("filter_unmapped", False)
+        create_empty = lg.get("create_empty", False)
         
-        if not group_name or not column:
+        if not group_name:
+            continue
+
+        # Handle empty groups (create group with no children)
+        if create_empty and not column:
+            if group_name in workspace.project_labels:
+                print(f"  ✓ {group_name}: Group exists (empty)")
+                results["groups_skipped"] += 1
+                continue
+            if dry_run:
+                print(f"  → Would create empty group: {group_name}")
+                results["groups_created"] += 1
+                workspace.project_labels[group_name] = {
+                    "id": f"dry-run-group-{group_name}",
+                    "isGroup": True,
+                    "children": {}
+                }
+            else:
+                try:
+                    result = client.execute(CREATE_PROJECT_LABEL_GROUP_MUTATION, {"name": group_name})
+                    if result.get("projectLabelCreate", {}).get("success"):
+                        group = result["projectLabelCreate"]["projectLabel"]
+                        print(f"  ✓ Created empty group: {group_name}")
+                        results["groups_created"] += 1
+                        workspace.project_labels[group_name] = {
+                            "id": group["id"], "isGroup": True, "children": {}
+                        }
+                    client.rate_limit_delay()
+                except Exception as e:
+                    if "duplicate" in str(e).lower() or "already exists" in str(e).lower():
+                        print(f"  ✓ {group_name}: Group already exists (empty)")
+                        results["groups_skipped"] += 1
+                    else:
+                        print(f"  ✗ Error creating empty group {group_name}: {e}")
+                        results["errors"].append({"group": group_name, "error": str(e)})
+            continue
+
+        if not column:
             continue
         
         # Collect unique values from CSV for this column
@@ -99,6 +139,16 @@ def ensure_label_groups(
                         unique_values.add(v)
             elif value:
                 unique_values.add(value)
+
+        # Apply value_map: transform values and optionally filter unmapped ones
+        if value_map:
+            mapped_values = set()
+            for v in unique_values:
+                if v in value_map:
+                    mapped_values.add(value_map[v])
+                elif not filter_unmapped:
+                    mapped_values.add(v)
+            unique_values = mapped_values
         
         if not unique_values:
             print(f"  ⏭ {group_name}: No values found in column '{column}'")
@@ -610,8 +660,12 @@ def _create_standalone_project_labels(
                 print(f"    ✗ Permission denied creating labels – skipping remaining")
                 results["errors"].append({"label": group_name, "error": error_str})
                 break
-            print(f"    ✗ Error creating label {child_name}: {e}")
-            results["errors"].append({"label": child_name, "error": error_str})
+            if "duplicate" in error_str.lower() and "label name" in error_str.lower():
+                print(f"    ⚠️  Label '{child_name}' already exists – skipping")
+                results["labels_skipped"] += 1
+            else:
+                print(f"    ✗ Error creating label {child_name}: {e}")
+                results["errors"].append({"label": child_name, "error": error_str})
 
 
 def ensure_issue_label_groups(
@@ -653,8 +707,47 @@ def ensure_issue_label_groups(
         column = lg.get("column")
         multi_value = lg.get("multi_value", False)
         separator = lg.get("separator", ",")
+        value_map = lg.get("value_map", {})
+        filter_unmapped = lg.get("filter_unmapped", False)
+        create_empty = lg.get("create_empty", False)
 
-        if not group_name or not column:
+        if not group_name:
+            continue
+
+        if create_empty and not column:
+            if group_name in workspace.issue_labels:
+                print(f"  ✓ {group_name}: Group exists (empty)")
+                results["groups_skipped"] += 1
+                continue
+            if dry_run:
+                print(f"  → Would create empty group: {group_name}")
+                results["groups_created"] += 1
+                workspace.issue_labels[group_name] = {
+                    "id": f"dry-run-group-{group_name}",
+                    "isGroup": True,
+                    "children": {},
+                }
+            else:
+                try:
+                    result = client.execute(CREATE_ISSUE_LABEL_GROUP_MUTATION, {"name": group_name})
+                    if result.get("issueLabelCreate", {}).get("success"):
+                        group = result["issueLabelCreate"]["issueLabel"]
+                        print(f"  ✓ Created empty group: {group_name}")
+                        results["groups_created"] += 1
+                        workspace.issue_labels[group_name] = {
+                            "id": group["id"], "isGroup": True, "children": {},
+                        }
+                    client.rate_limit_delay()
+                except Exception as e:
+                    if "duplicate" in str(e).lower() or "already exists" in str(e).lower():
+                        print(f"  ✓ {group_name}: Group already exists (empty)")
+                        results["groups_skipped"] += 1
+                    else:
+                        print(f"  ✗ Error creating empty group {group_name}: {e}")
+                        results["errors"].append({"group": group_name, "error": str(e)})
+            continue
+
+        if not column:
             continue
 
         unique_values = set()
@@ -667,6 +760,15 @@ def ensure_issue_label_groups(
                         unique_values.add(v)
             elif value:
                 unique_values.add(value)
+
+        if value_map:
+            mapped_values = set()
+            for v in unique_values:
+                if v in value_map:
+                    mapped_values.add(value_map[v])
+                elif not filter_unmapped:
+                    mapped_values.add(v)
+            unique_values = mapped_values
 
         if not unique_values:
             print(f"  ⏭ {group_name}: No values found in column '{column}'")

@@ -42,7 +42,12 @@ query DiscoverWorkspace {
       type
     }
   }
-  projectLabels(first: 100) {
+}
+"""
+
+DISCOVER_PROJECT_LABELS_QUERY = """
+query DiscoverProjectLabels($after: String) {
+  projectLabels(first: 100, after: $after) {
     nodes {
       id
       name
@@ -53,6 +58,10 @@ query DiscoverWorkspace {
           name
         }
       }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
     }
   }
 }
@@ -464,17 +473,30 @@ def discover_workspace(client: LinearClient, config: dict) -> WorkspaceConfig:
     
     for status in workspace_data.get("projectStatuses", {}).get("nodes", []):
         workspace.project_statuses[status["name"]] = status["id"]
-    
-    for label in workspace_data.get("projectLabels", {}).get("nodes", []):
-        children = {}
-        for child in label.get("children", {}).get("nodes", []):
-            children[child["name"]] = child["id"]
-        
-        workspace.project_labels[label["name"]] = {
-            "id": label["id"],
-            "isGroup": label["isGroup"],
-            "children": children,
-        }
+
+    after_cursor = None
+    label_count = 0
+    while True:
+        variables = {"after": after_cursor} if after_cursor else {}
+        pl_data = client.execute(DISCOVER_PROJECT_LABELS_QUERY, variables)
+        pl_root = pl_data.get("projectLabels", {})
+        for label in pl_root.get("nodes", []):
+            children = {}
+            for child in label.get("children", {}).get("nodes", []):
+                children[child["name"]] = child["id"]
+            workspace.project_labels[label["name"]] = {
+                "id": label["id"],
+                "isGroup": label["isGroup"],
+                "children": children,
+            }
+            label_count += 1
+        page_info = pl_root.get("pageInfo", {})
+        if page_info.get("hasNextPage") and page_info.get("endCursor"):
+            after_cursor = page_info["endCursor"]
+        else:
+            break
+    if label_count > 100:
+        print(f"    Found {label_count} project labels (paginated)")
 
     # Step 6b: Fetch issue labels (paginated, separate query for complexity)
     print("  Fetching issue labels...")

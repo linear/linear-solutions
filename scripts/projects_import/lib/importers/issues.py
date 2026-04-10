@@ -4,7 +4,7 @@ import re
 
 from ..client import LinearClient
 from ..discovery import WorkspaceConfig, get_team_state_id
-from ..utils import truncate_name, parse_date, normalize_status, normalize_priority, parse_estimate, priority_from_ranking, MAX_ISSUE_TITLE_LENGTH
+from ..utils import truncate_name, parse_date, normalize_status, normalize_priority, parse_estimate, priority_from_ranking, strip_html_tags, MAX_ISSUE_TITLE_LENGTH
 
 CREATE_ISSUE_MUTATION = """
 mutation CreateIssue(
@@ -70,6 +70,23 @@ mutation CreateIssueRelation($issueId: String!, $relatedIssueId: String!, $type:
   }) {
     success
     issueRelation {
+      id
+    }
+  }
+}
+"""
+
+CREATE_PROJECT_RELATION_MUTATION = """
+mutation CreateProjectRelation($projectId: String!, $relatedProjectId: String!, $type: String!, $anchorType: String!, $relatedAnchorType: String!) {
+  projectRelationCreate(input: {
+    projectId: $projectId,
+    relatedProjectId: $relatedProjectId,
+    type: $type,
+    anchorType: $anchorType,
+    relatedAnchorType: $relatedAnchorType
+  }) {
+    success
+    projectRelation {
       id
     }
   }
@@ -424,7 +441,7 @@ def prepare_issues_from_hierarchical(
         if desc_col:
             base_desc = row.get(desc_col, "").strip()
             if base_desc:
-                desc_parts.append(base_desc)
+                desc_parts.append(strip_html_tags(base_desc))
         
         meta_parts = []
         team_list = row.get(team_list_col, "").strip() if team_list_col else ""
@@ -481,10 +498,11 @@ def create_issue_relations(
     uuid_to_linear: dict,
     dry_run: bool = False,
 ) -> dict:
-    """Create blocking relations between issues.
+    """Create blocking relations between issues and between projects.
     
-    uuid_to_linear maps source UUIDs to (type, linear_id) tuples.
-    Only creates relations where both sides are issues (not projects).
+    uuid_to_linear maps source UUIDs to (type, linear_id) tuples where
+    type is ``"issue"`` or ``"project"``.  Same-type pairs are created as
+    blocking relations; cross-type pairs (project↔issue) are skipped.
     """
     results = {
         "created": 0,
@@ -494,7 +512,8 @@ def create_issue_relations(
     
     print("\n🔗 Creating blocking relations...")
     
-    relations_to_create = []
+    issue_relations = []
+    project_relations = []
     
     for row in all_csv_data:
         source_uuid = row.get(entity_uuid_col, "").strip()
@@ -503,7 +522,6 @@ def create_issue_relations(
         if not source_uuid or not blocking_ids:
             continue
         
-        # Parse blocking UUIDs
         target_uuids = [u.strip() for u in blocking_ids.split(separator) if u.strip()]
         
         source_info = uuid_to_linear.get(source_uuid)
@@ -511,8 +529,6 @@ def create_issue_relations(
             continue
         
         source_type, source_id = source_info
-        if source_type != "issue":
-            continue  # Can only create relations between issues
         
         for target_uuid in target_uuids:
             target_info = uuid_to_linear.get(target_uuid)
@@ -521,21 +537,26 @@ def create_issue_relations(
                 continue
             
             target_type, target_id = target_info
-            if target_type != "issue":
+
+            if source_type == "issue" and target_type == "issue":
+                issue_relations.append((source_id, target_id))
+            elif source_type == "project" and target_type == "project":
+                project_relations.append((source_id, target_id))
+            else:
                 results["skipped"] += 1
-                continue
-            
-            relations_to_create.append((source_id, target_id))
     
-    if not relations_to_create:
-        print("  No issue-to-issue blocking relations found")
+    if not issue_relations and not project_relations:
+        print("  No blocking relations found")
         return results
     
-    print(f"  Found {len(relations_to_create)} relations to create")
+    if issue_relations:
+        print(f"  Found {len(issue_relations)} issue relations to create")
+    if project_relations:
+        print(f"  Found {len(project_relations)} project relations to create")
     
-    for source_id, target_id in relations_to_create:
+    for source_id, target_id in issue_relations:
         if dry_run:
-            print(f"  → Would create: {source_id[:8]}... blocks {target_id[:8]}...")
+            print(f"  → Would create issue relation: {source_id[:8]}... blocks {target_id[:8]}...")
             results["created"] += 1
             continue
         
@@ -546,6 +567,28 @@ def create_issue_relations(
                 "type": "blocks",
             })
             if result.get("issueRelationCreate", {}).get("success"):
+                results["created"] += 1
+            else:
+                results["errors"].append({"error": "Unknown error"})
+            client.rate_limit_delay()
+        except Exception as e:
+            results["errors"].append({"error": str(e)})
+
+    for source_id, target_id in project_relations:
+        if dry_run:
+            print(f"  → Would create project relation: {source_id[:8]}... blocks {target_id[:8]}...")
+            results["created"] += 1
+            continue
+
+        try:
+            result = client.execute(CREATE_PROJECT_RELATION_MUTATION, {
+                "projectId": source_id,
+                "relatedProjectId": target_id,
+                "type": "dependency",
+                "anchorType": "end",
+                "relatedAnchorType": "start",
+            })
+            if result.get("projectRelationCreate", {}).get("success"):
                 results["created"] += 1
             else:
                 results["errors"].append({"error": "Unknown error"})
