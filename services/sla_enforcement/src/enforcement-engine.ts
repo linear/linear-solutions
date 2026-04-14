@@ -26,6 +26,7 @@ interface CacheEntry {
   slaStartedAt: string | null;
   slaBreachesAt: string | null;
   priority?: number;
+  createdAt: string | null; // immutable baseline — never overwritten after first cache
   cachedAt: string; // ISO string for JSON serialization
 }
 
@@ -37,12 +38,13 @@ interface PersistentCache {
 export class EnforcementEngine {
   // In-memory cache of SLA and priority states for protected issues
   // Maps issueId -> { slaType, slaStartedAt, slaBreachesAt, priority, cachedAt }
-  private slaCache: Map<string, { 
-    slaType: string | null; 
+  private slaCache: Map<string, {
+    slaType: string | null;
     slaStartedAt: string | null;
     slaBreachesAt: string | null;
     priority?: number;
-    cachedAt: Date 
+    createdAt: string | null; // immutable baseline — set once, never updated
+    cachedAt: Date
   }> = new Map();
 
   private cacheFilePath: string;
@@ -75,6 +77,7 @@ export class EnforcementEngine {
             slaStartedAt: entry.slaStartedAt,
             slaBreachesAt: entry.slaBreachesAt,
             priority: entry.priority,
+            createdAt: entry.createdAt ?? null,
             cachedAt: new Date(entry.cachedAt)
           });
         }
@@ -119,43 +122,47 @@ export class EnforcementEngine {
         const issues = await this.linearClient.getIssuesWithLabel(label.id);
         
         for (const issue of issues) {
-          if (issue.slaType && issue.slaStartedAt && issue.slaBreachesAt) {
-            const existingEntry = this.slaCache.get(issue.id);
-            
-            // Update cache if:
-            // 1. Issue not in cache yet, OR
-            // 2. Current SLA in Linear is DIFFERENT from cached (Linear was updated)
-            const shouldUpdate = !existingEntry || 
+          const existingEntry = this.slaCache.get(issue.id);
+
+          // Always cache if issue has slaStartedAt or createdAt — we need
+          // createdAt as the immutable baseline even when SLA is not fully set.
+          if (issue.slaType && issue.slaStartedAt && issue.slaBreachesAt || issue.createdAt) {
+            // Update SLA/priority fields if they changed, but NEVER overwrite createdAt
+            // once it has been set — it is the immutable baseline.
+            const shouldUpdate = !existingEntry ||
               existingEntry.slaBreachesAt !== issue.slaBreachesAt ||
               existingEntry.priority !== issue.priority;
-            
+
             if (shouldUpdate) {
               this.slaCache.set(issue.id, {
-                slaType: issue.slaType,
-                slaStartedAt: issue.slaStartedAt,
-                slaBreachesAt: issue.slaBreachesAt,
+                slaType: issue.slaType || null,
+                slaStartedAt: issue.slaStartedAt || null,
+                slaBreachesAt: issue.slaBreachesAt || null,
                 priority: issue.priority,
+                // Preserve existing createdAt if already cached — never overwrite
+                createdAt: existingEntry?.createdAt ?? issue.createdAt ?? null,
                 cachedAt: new Date()
               });
               cachedCount++;
-              
-              logger.info('Cached/updated issue SLA on startup', {
+
+              logger.info('Cached/updated issue on startup', {
                 issueId: issue.id,
                 identifier: issue.identifier,
                 slaType: issue.slaType,
                 slaBreachesAt: issue.slaBreachesAt,
+                createdAt: issue.createdAt,
                 priority: issue.priority,
                 wasUpdate: !!existingEntry
               });
             } else {
-              logger.debug('Issue SLA unchanged, keeping cached values', {
+              logger.debug('Issue unchanged, keeping cached values', {
                 issueId: issue.id,
                 identifier: issue.identifier
               });
             }
           } else {
             skippedCount++;
-            logger.debug('Issue has no SLA, skipping', {
+            logger.debug('Issue has no SLA or createdAt, skipping', {
               issueId: issue.id,
               identifier: issue.identifier
             });
@@ -202,6 +209,7 @@ export class EnforcementEngine {
           slaStartedAt: entry.slaStartedAt,
           slaBreachesAt: entry.slaBreachesAt,
           priority: entry.priority,
+          createdAt: entry.createdAt ?? null,
           cachedAt: entry.cachedAt.toISOString()
         };
       }
@@ -538,11 +546,14 @@ export class EnforcementEngine {
     slaBreachesAt?: string | null;
     priority?: number;
   }): void {
+    // Preserve createdAt — it is the immutable baseline and must never be overwritten
+    const existing = this.slaCache.get(issueId);
     this.slaCache.set(issueId, {
       slaType: values.slaType || null,
       slaStartedAt: values.slaStartedAt || null,
       slaBreachesAt: values.slaBreachesAt || null,
       priority: values.priority,
+      createdAt: existing?.createdAt ?? null,
       cachedAt: new Date()
     });
     
@@ -809,6 +820,37 @@ export class EnforcementEngine {
       }
     }
 
+    // Canonical slaStartedAt baseline check
+    // When enabled, slaStartedAt must always equal the issue's createdAt.
+    // This catches silent resets (e.g. from priority-triggered workflows) that
+    // don't appear in updatedFrom and would otherwise go undetected.
+    if (this.config.protectedFields.slaCreatedAtBaseline) {
+      const cached = this.slaCache.get(current.id);
+      if (cached?.createdAt && current.slaStartedAt !== cached.createdAt) {
+        const alreadyDetected = changes.find(c => c.field === 'slaStartedAt');
+        if (alreadyDetected) {
+          // Override the revert target to createdAt rather than the previous value
+          alreadyDetected.oldValue = cached.createdAt;
+          alreadyDetected.description = `SLA start date changed from issue creation date`;
+          alreadyDetected.revertDescription = `Restored SLA start date to issue creation date (${cached.createdAt})`;
+        } else {
+          // Not caught by the updatedFrom check — add it now
+          changes.push({
+            field: 'slaStartedAt',
+            oldValue: cached.createdAt,
+            newValue: current.slaStartedAt,
+            description: `SLA start date (${current.slaStartedAt ?? 'unset'}) differs from issue creation date (${cached.createdAt})`,
+            revertDescription: `Restored SLA start date to issue creation date (${cached.createdAt})`
+          });
+          logger.info('Canonical baseline: detected slaStartedAt drift', {
+            issueId: current.id,
+            currentSlaStartedAt: current.slaStartedAt,
+            expectedCreatedAt: cached.createdAt
+          });
+        }
+      }
+    }
+
     return changes;
   }
 
@@ -895,11 +937,24 @@ export class EnforcementEngine {
       }
       // NO FALLBACK to currentState - that has the wrong (workflow-generated) values!
       
+      // When baseline mode is on, always use createdAt as slaStartedAt regardless
+      // of what previous state or cache says
+      if (this.config.protectedFields.slaCreatedAtBaseline) {
+        const cached = this.slaCache.get(issueId);
+        if (cached?.createdAt) {
+          slaStartedAt = cached.createdAt;
+          logger.info('slaCreatedAtBaseline: overriding slaStartedAt with createdAt for priority revert', {
+            issueId,
+            createdAt: cached.createdAt
+          });
+        }
+      }
+
       if (slaType && slaStartedAt && slaBreachesAt) {
         update.slaType = slaType;
         update.slaStartedAt = typeof slaStartedAt === 'string' ? new Date(slaStartedAt) : slaStartedAt;
         update.slaBreachesAt = typeof slaBreachesAt === 'string' ? new Date(slaBreachesAt) : slaBreachesAt;
-        
+
         logger.info('Restoring SLA to prevent workflow recalculation after priority revert', {
           issueId,
           slaType: update.slaType,

@@ -13,6 +13,7 @@ export interface Config {
     label: boolean;
     sla: boolean;
     priority: boolean;
+    slaCreatedAtBaseline?: boolean;
   };
   allowlist: AllowlistUser[];
   agent: AgentConfig;
