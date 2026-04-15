@@ -164,7 +164,7 @@ The allowlist supports unlimited nesting. Each entry is either a **leaf user** o
 **Key rules:**
 
 - `**permissions`** — the array of fields this entry grants access to. If omitted, the entry inherits the permissions of its parent group. Root entries with no `permissions` default to all four permissions (backward compatible).
-- `**linearTeamId**` — if set, every member of that Linear team automatically matches this group entry. The agent fetches team membership at startup and refreshes it every 4 hours. Find your team ID in Linear under Settings → Teams → (your team) → the ID in the URL.
+- `**linearTeamId**` — if set, every member of that Linear team automatically matches this group entry. Accepts the team **key** (e.g. `"ADM"`, `"ENG"`) or a full UUID — the key is recommended and is visible in Linear under Settings → Teams. The agent fetches team membership at startup and refreshes it every 4 hours.
 - `**members**` — nested users or sub-groups. Each sub-entry can have its own `permissions` override; otherwise it inherits from the parent.
 - **Union resolution** — if a user matches multiple entries (e.g. they are both in a team group and listed as a flat leaf), they receive the union of all matched permission sets. More entries = more permissive.
 - **Flat entries** — a leaf with no `permissions` field defaults to all permissions. This is how legacy configs continue to work without any changes.

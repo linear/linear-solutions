@@ -278,7 +278,7 @@ Each entry can carry a `permissions` array controlling which protected fields th
 
 - **Inheritance** — if `permissions` is omitted, the entry inherits from its parent group. Root entries with no `permissions` default to all permissions (backward compatible with flat configs).
 - **Union resolution** — if a user matches multiple entries, they receive the union (most permissive) of all matched permission sets.
-- `**linearTeamId`** — all members of the referenced Linear team automatically match the group. Membership is fetched at startup and refreshed every 4 hours. Use this instead of listing individual emails when you want permissions to follow team membership — new hires are covered automatically, no config changes needed. You can still add a `members` array alongside `linearTeamId` to give specific individuals within the team elevated or narrowed permissions; the union rule applies.
+- `**linearTeamId`** — all members of the referenced Linear team automatically match the group. Accepts the team **key** (e.g. `"ADM"`, `"ENG"` — visible in Linear under Settings → Teams) or a full UUID. The key is recommended. Membership is fetched at startup and refreshed every 4 hours. Use this instead of listing individual emails so new hires are covered automatically. You can still add a `members` array alongside `linearTeamId` to give specific individuals elevated or narrowed permissions; the union rule applies.
 - **Partial authorization** — if an actor is authorized for some changed fields but not others, only the unauthorized fields are reverted. Authorized changes pass through unchanged.
 - **Flat entries** — a leaf with no `permissions` field defaults to all permissions, so existing configs continue to work without modification.
 
