@@ -14,7 +14,14 @@ import {
   EnforcementResult,
   IssueData,
   IssueLabel,
-  AuditEntry
+  AuditEntry,
+  Permission,
+  ALL_PERMISSIONS,
+  AllowlistEntry,
+  AllowlistLeaf,
+  AllowlistGroup,
+  isAllowlistGroup,
+  LinearUser
 } from './types';
 import { LinearClient } from './linear-client';
 import logger from './utils/logger';
@@ -25,6 +32,7 @@ interface CacheEntry {
   slaType: string | null;
   slaStartedAt: string | null;
   slaBreachesAt: string | null;
+  originalSlaBreachesAt: string | null; // immutable baseline — set once when first seen, never overwritten by webhooks
   priority?: number;
   createdAt: string | null; // immutable baseline — never overwritten after first cache
   cachedAt: string; // ISO string for JSON serialization
@@ -42,6 +50,7 @@ export class EnforcementEngine {
     slaType: string | null;
     slaStartedAt: string | null;
     slaBreachesAt: string | null;
+    originalSlaBreachesAt: string | null; // immutable baseline — set once, never overwritten by webhooks
     priority?: number;
     createdAt: string | null; // immutable baseline — set once, never updated
     cachedAt: Date
@@ -51,7 +60,8 @@ export class EnforcementEngine {
 
   constructor(
     private config: Config,
-    private linearClient: LinearClient
+    private linearClient: LinearClient,
+    private teamMemberCache: Map<string, LinearUser[]> = new Map()
   ) {
     // Set cache file path next to audit log
     const logsDir = path.dirname(this.config.logging.auditLogPath);
@@ -76,6 +86,8 @@ export class EnforcementEngine {
             slaType: entry.slaType,
             slaStartedAt: entry.slaStartedAt,
             slaBreachesAt: entry.slaBreachesAt,
+            // Backward compat: old cache files won't have this field; fall back to slaBreachesAt
+            originalSlaBreachesAt: (entry as any).originalSlaBreachesAt ?? entry.slaBreachesAt ?? null,
             priority: entry.priority,
             createdAt: entry.createdAt ?? null,
             cachedAt: new Date(entry.cachedAt)
@@ -138,6 +150,10 @@ export class EnforcementEngine {
                 slaType: issue.slaType || null,
                 slaStartedAt: issue.slaStartedAt || null,
                 slaBreachesAt: issue.slaBreachesAt || null,
+                // Preserve existing originalSlaBreachesAt if already cached — never overwrite.
+                // This is the immutable target for SLA restoration; set once from the first
+                // known-good value and never updated from webhook/workflow-computed values.
+                originalSlaBreachesAt: existingEntry?.originalSlaBreachesAt ?? issue.slaBreachesAt ?? null,
                 priority: issue.priority,
                 // Preserve existing createdAt if already cached — never overwrite
                 createdAt: existingEntry?.createdAt ?? issue.createdAt ?? null,
@@ -208,6 +224,7 @@ export class EnforcementEngine {
           slaType: entry.slaType,
           slaStartedAt: entry.slaStartedAt,
           slaBreachesAt: entry.slaBreachesAt,
+          originalSlaBreachesAt: entry.originalSlaBreachesAt ?? null,
           priority: entry.priority,
           createdAt: entry.createdAt ?? null,
           cachedAt: entry.cachedAt.toISOString()
@@ -240,7 +257,60 @@ export class EnforcementEngine {
 
     // CRITICAL: Check if this action was made by the agent itself (infinite loop prevention)
     if (this.isAgentAction(payload.actor)) {
-      logger.debug('Skipping enforcement - action was made by agent itself', {
+      // Skip general enforcement to prevent loops — but still run the baseline drift
+      // correction if enabled. Priority changes (even by the agent/authorized user) can
+      // trigger Linear workflows that silently reset slaStartedAt away from createdAt.
+      // The correction is safe: after fixing drift, the next webhook will have
+      // slaStartedAt === createdAt, so this block won't fire again.
+      if (this.config.protectedFields.slaCreatedAtBaseline) {
+        const cached = this.slaCache.get(current.id);
+        const hasProtectedLabel = (current.labels || []).some((l: any) =>
+          this.config.protectedLabels.includes(l.name)
+        );
+        if (cached?.createdAt && hasProtectedLabel && current.slaStartedAt &&
+            current.slaStartedAt !== cached.createdAt &&
+            current.slaBreachesAt && current.slaType) {
+          const ruleBreachesAt = this.resolveBreachFromRules(
+            cached.createdAt,
+            current.priority ?? 0,
+            current.labels ?? [],
+            (current as any).teamId
+          );
+          const durationMs = new Date(current.slaBreachesAt).getTime() -
+                             new Date(current.slaStartedAt).getTime();
+          const correctBreachesAt = ruleBreachesAt ?? new Date(
+            new Date(cached.createdAt).getTime() + durationMs
+          );
+          logger.info('slaCreatedAtBaseline: correcting drift after agent/authorized action', {
+            issueId: current.id,
+            actor: payload.actor.email || payload.actor.name,
+            currentSlaStartedAt: current.slaStartedAt,
+            createdAt: cached.createdAt,
+            currentSlaBreachesAt: current.slaBreachesAt,
+            durationMs,
+            durationHours: Math.round(durationMs / 1000 / 60 / 60 * 10) / 10,
+            correctSlaBreachesAt: correctBreachesAt,
+            reasoning: `SLA duration (${Math.round(durationMs / 1000 / 60 / 60 * 10) / 10}h) preserved, anchored to createdAt instead of now`
+          });
+          await this.linearClient.updateIssue(current.id, {
+            slaType: current.slaType,
+            slaStartedAt: new Date(cached.createdAt),
+            slaBreachesAt: correctBreachesAt
+          });
+          // Lock in the corrected breach date as the immutable originalSlaBreachesAt baseline.
+          // This prevents the duration formula in revertChanges from inheriting a stale
+          // policy duration if Linear's workflows later fire out of order (e.g. rapid
+          // priority toggling causes a 7-day High-policy workflow to arrive after the
+          // issue has already been set back to Urgent).
+          this.updateCache(current.id, {
+            slaType: current.slaType,
+            slaStartedAt: cached.createdAt,
+            slaBreachesAt: correctBreachesAt.toISOString(),
+            updateOriginalSlaBreachesAt: true
+          });
+        }
+      }
+      logger.debug('Skipping general enforcement - action was made by agent itself', {
         actor: payload.actor.name,
         issueId: current.id
       });
@@ -369,12 +439,33 @@ export class EnforcementEngine {
       });
     }
 
-    // Check if user is authorized
-    if (this.isAuthorizedUser(payload.actor)) {
-      logger.info('Change allowed - user is authorized', {
+    // Resolve what fields this actor is permitted to change
+    const actorPermissions = this.getActorPermissions(payload.actor);
+
+    const allowedChanges = changes.filter(c =>
+      // Baseline-detected drift is always reverted — the actor didn't intentionally
+      // move the SLA clock, Linear's workflow did. slaBaseline permission only covers
+      // explicit slaStartedAt changes that appeared in the webhook's updatedFrom.
+      !c.fromBaseline && actorPermissions.has(this.changeRequiresPermission(c))
+    );
+    const unauthorizedChanges = changes.filter(c =>
+      c.fromBaseline || !actorPermissions.has(this.changeRequiresPermission(c))
+    );
+
+    logger.info('Permission check', {
+      actor: payload.actor.email || payload.actor.name,
+      issueId: current.id,
+      actorPermissions: Array.from(actorPermissions),
+      allowedFields: allowedChanges.map(c => c.field),
+      unauthorizedFields: unauthorizedChanges.map(c => c.field)
+    });
+
+    // Fully authorized — no enforcement needed
+    if (unauthorizedChanges.length === 0) {
+      logger.info('Change allowed — user is authorized for all changed fields', {
         actor: payload.actor.email || payload.actor.name,
         issueId: current.id,
-        changes: changes.map(c => c.field)
+        fields: changes.map(c => c.field)
       });
 
       await this.logAuditEntry({
@@ -384,7 +475,8 @@ export class EnforcementEngine {
         issueTitle: current.title,
         actor: payload.actor,
         action: 'allowed',
-        reason: 'User in allowlist',
+        reason: 'User authorized for all changed fields',
+        actorPermissions: Array.from(actorPermissions),
         changes: changes.map(c => ({
           field: c.field,
           oldValue: c.oldValue,
@@ -393,32 +485,152 @@ export class EnforcementEngine {
         }))
       });
 
-      // Authorized change - update cache with NEW values (the change is allowed)
       if (hasProtectedNow) {
+        const slaBreachesAtWasChanged = changes.some(c => c.field === 'slaBreachesAt');
         this.updateCache(current.id, {
           slaType: current.slaType,
           slaStartedAt: current.slaStartedAt,
           slaBreachesAt: current.slaBreachesAt,
-          priority: current.priority
+          priority: current.priority,
+          // Authorized user explicitly changed slaBreachesAt — update the immutable baseline
+          // so future restorations target the new deadline, not the old one
+          updateOriginalSlaBreachesAt: slaBreachesAtWasChanged
         });
+
+        // After an authorized priority change, Linear's workflow will recalculate the SLA
+        // (resetting slaStartedAt to "now"). The resulting webhook comes from a different
+        // webhook subscription (non-OAuth) and fails signature verification, so we can't
+        // rely on it. Instead, fetch the live issue after a short delay and apply the
+        // createdAt correction proactively.
+        const hasPriorityChange = changes.some(c => c.field === 'priority');
+        if (hasPriorityChange && this.config.protectedFields.slaCreatedAtBaseline) {
+          const issueId = current.id;
+          const cachedCreatedAt = this.slaCache.get(issueId)?.createdAt;
+
+          if (cachedCreatedAt) {
+            setTimeout(async () => {
+              try {
+                const liveIssue = await this.linearClient.getIssue(issueId);
+
+                if (!liveIssue.slaType) {
+                  logger.debug('slaCreatedAtBaseline: live issue has no SLA after priority change, skipping correction', { issueId });
+                  return;
+                }
+
+                // Compute the correct slaBreachesAt = createdAt + authoritative window.
+                //
+                // Source priority:
+                //   1. SLA rule match (resolveBreachFromRules) — always authoritative
+                //   2. Cached duration (pre-workflow snapshot from webhook) — safe fallback when
+                //      slaStartedAt drifted: the cache holds values before Linear's workflow ran,
+                //      so the duration is from the previously-correct state, not from a potentially
+                //      stale workflow for the wrong priority level
+                //   3. Bail — no rule and no drift means nothing reliable to act on
+                //
+                // We deliberately do NOT use liveIssue duration (slaBreachesAt - slaStartedAt)
+                // because Linear's workflow can fire for the wrong priority window during rapid
+                // priority changes, producing durations that corrupt slaBreachesAt.
+                const cachedEntry = this.slaCache.get(issueId);
+                const hasDrift = liveIssue.slaStartedAt !== cachedCreatedAt;
+
+                const ruleBreachesAt = this.resolveBreachFromRules(
+                  cachedCreatedAt,
+                  liveIssue.priority ?? 0,
+                  liveIssue.labels ?? [],
+                  (liveIssue as any).teamId
+                );
+
+                let correctBreachesAt: Date | null = null;
+                let source = '';
+
+                if (ruleBreachesAt) {
+                  // Rule match — authoritative for any priority, drift or not
+                  correctBreachesAt = ruleBreachesAt;
+                  source = 'slaRule';
+                } else if (hasDrift && cachedEntry?.slaBreachesAt && cachedEntry?.slaStartedAt) {
+                  // slaStartedAt drifted but no rule — use cached duration to re-anchor to createdAt.
+                  // The cache was written from the webhook payload (before Linear's workflow ran),
+                  // so its duration reflects the last known-good state, not a stale workflow result.
+                  const durationMs = new Date(cachedEntry.slaBreachesAt).getTime() -
+                                     new Date(cachedEntry.slaStartedAt).getTime();
+                  correctBreachesAt = new Date(new Date(cachedCreatedAt).getTime() + durationMs);
+                  source = 'cachedDuration';
+                } else {
+                  // No rule and no drift — slaStartedAt is already anchored to createdAt.
+                  // Without a rule we have no authoritative window, so leave slaBreachesAt alone.
+                  logger.debug('slaCreatedAtBaseline: no drift and no SLA rule — slaBreachesAt unchanged', { issueId });
+                  return;
+                }
+
+                const alreadyCorrect =
+                  liveIssue.slaStartedAt === cachedCreatedAt &&
+                  liveIssue.slaBreachesAt === correctBreachesAt.toISOString();
+
+                if (alreadyCorrect) {
+                  logger.debug('slaCreatedAtBaseline: slaStartedAt and slaBreachesAt already correct after priority change', { issueId });
+                  return;
+                }
+
+                logger.info('slaCreatedAtBaseline: applying correct SLA after authorized priority change', {
+                  issueId,
+                  createdAt: cachedCreatedAt,
+                  priority: liveIssue.priority,
+                  hasDrift,
+                  currentSlaStartedAt: liveIssue.slaStartedAt,
+                  currentSlaBreachesAt: liveIssue.slaBreachesAt,
+                  correctSlaBreachesAt: correctBreachesAt,
+                  source
+                });
+
+                await this.linearClient.updateIssue(issueId, {
+                  slaType: liveIssue.slaType,
+                  slaStartedAt: new Date(cachedCreatedAt),
+                  slaBreachesAt: correctBreachesAt
+                });
+
+                this.updateCache(issueId, {
+                  slaType: liveIssue.slaType,
+                  slaStartedAt: cachedCreatedAt,
+                  slaBreachesAt: correctBreachesAt.toISOString(),
+                  updateOriginalSlaBreachesAt: true
+                });
+              } catch (error) {
+                logger.error('slaCreatedAtBaseline: failed to correct drift after authorized priority change', {
+                  issueId,
+                  error: (error as Error).message
+                });
+              }
+            }, 2500);
+          }
+        }
       }
 
-      return { enforced: false, reason: 'User authorized', changes };
+      return { enforced: false, reason: 'User authorized', changes, allowedChanges: changes, unauthorizedChanges: [] };
     }
 
-    // User is NOT authorized - enforce protection
-    logger.warn('Unauthorized change detected', {
-      actor: payload.actor.email || payload.actor.name,
-      issueId: current.id,
-      changes: changes.map(c => c.field)
-    });
+    // Partially authorized — log what's allowed through before enforcing the rest
+    if (allowedChanges.length > 0) {
+      logger.info('Partial authorization — some changes allowed, reverting unauthorized fields only', {
+        actor: payload.actor.email || payload.actor.name,
+        issueId: current.id,
+        allowedFields: allowedChanges.map(c => c.field),
+        unauthorizedFields: unauthorizedChanges.map(c => c.field)
+      });
+    } else {
+      logger.warn('Unauthorized change detected — actor has no permission for any changed fields', {
+        actor: payload.actor.email || payload.actor.name,
+        issueId: current.id,
+        fields: changes.map(c => c.field)
+      });
+    }
 
     // DRY RUN MODE - Log what would happen but don't actually revert
     if (this.config.behavior.dryRun) {
-      logger.info('[DRY RUN] Would revert unauthorized change', {
+      logger.info('[DRY RUN] Would revert unauthorized fields', {
         issueId: current.id,
         actor: payload.actor.email || payload.actor.name,
-        changes
+        unauthorizedFields: unauthorizedChanges.map(c => c.field),
+        allowedFields: allowedChanges.map(c => c.field)
       });
 
       await this.logAuditEntry({
@@ -429,7 +641,8 @@ export class EnforcementEngine {
         actor: payload.actor,
         action: 'detected',
         reason: 'Dry run mode - would revert',
-        changes: changes.map(c => ({
+        actorPermissions: Array.from(actorPermissions),
+        changes: unauthorizedChanges.map(c => ({
           field: c.field,
           oldValue: c.oldValue,
           newValue: c.newValue,
@@ -438,7 +651,6 @@ export class EnforcementEngine {
         dryRun: true
       });
 
-      // Dry run - no actual revert, so update cache with current (changed) values
       if (hasProtectedNow) {
         this.updateCache(current.id, {
           slaType: current.slaType,
@@ -448,17 +660,18 @@ export class EnforcementEngine {
         });
       }
 
-      return { enforced: false, reason: 'Dry run mode', changes, dryRun: true };
+      return { enforced: false, reason: 'Dry run mode', changes: unauthorizedChanges, allowedChanges, unauthorizedChanges, dryRun: true };
     }
 
     // NOTIFY ONLY MODE - Comment but don't revert
     if (this.config.behavior.notifyOnly) {
-      logger.info('[NOTIFY ONLY] Detected unauthorized change but not reverting', {
+      logger.info('[NOTIFY ONLY] Detected unauthorized fields but not reverting', {
         issueId: current.id,
-        actor: payload.actor.email || payload.actor.name
+        actor: payload.actor.email || payload.actor.name,
+        unauthorizedFields: unauthorizedChanges.map(c => c.field)
       });
 
-      await this.postAgentComment(current.id, payload.actor, changes, false);
+      await this.postAgentComment(current.id, payload.actor, allowedChanges, unauthorizedChanges, false);
 
       await this.logAuditEntry({
         webhookId: payload.webhookId,
@@ -468,7 +681,8 @@ export class EnforcementEngine {
         actor: payload.actor,
         action: 'detected',
         reason: 'Notify only mode - no revert',
-        changes: changes.map(c => ({
+        actorPermissions: Array.from(actorPermissions),
+        changes: unauthorizedChanges.map(c => ({
           field: c.field,
           oldValue: c.oldValue,
           newValue: c.newValue,
@@ -477,7 +691,6 @@ export class EnforcementEngine {
         notifyOnly: true
       });
 
-      // Notify only - no actual revert, so update cache with current (changed) values
       if (hasProtectedNow) {
         this.updateCache(current.id, {
           slaType: current.slaType,
@@ -487,37 +700,39 @@ export class EnforcementEngine {
         });
       }
 
-      return { enforced: false, reason: 'Notify only mode', changes };
+      return { enforced: false, reason: 'Notify only mode', changes: unauthorizedChanges, allowedChanges, unauthorizedChanges };
     }
 
-    // NORMAL MODE - Revert the changes
+    // NORMAL MODE - Revert only the unauthorized changes
     try {
-      await this.revertChanges(current.id, changes, previous, existingCache, current);
-      await this.postAgentComment(current.id, payload.actor, changes, true);
+      await this.revertChanges(current.id, unauthorizedChanges, previous, existingCache, current);
+      await this.postAgentComment(current.id, payload.actor, allowedChanges, unauthorizedChanges, true);
 
+      const auditAction = allowedChanges.length > 0 ? 'partial' : 'reverted';
       await this.logAuditEntry({
         webhookId: payload.webhookId,
         issueId: current.id,
         issueIdentifier: current.identifier,
         issueTitle: current.title,
         actor: payload.actor,
-        action: 'reverted',
-        reason: 'User not in allowlist',
-        changes: changes.map(c => ({
-          field: c.field,
-          oldValue: c.oldValue,
-          newValue: c.newValue,
-          reverted: true
-        }))
+        action: auditAction,
+        reason: allowedChanges.length > 0
+          ? 'Partial authorization — some fields allowed, unauthorized fields reverted'
+          : 'User not authorized for any changed fields',
+        actorPermissions: Array.from(actorPermissions),
+        changes: [
+          ...allowedChanges.map(c => ({ field: c.field, oldValue: c.oldValue, newValue: c.newValue, reverted: false })),
+          ...unauthorizedChanges.map(c => ({ field: c.field, oldValue: c.oldValue, newValue: c.newValue, reverted: true }))
+        ]
       });
 
-      logger.info('Successfully reverted unauthorized change', {
+      logger.info('Successfully reverted unauthorized fields', {
         issueId: current.id,
-        actor: payload.actor.email || payload.actor.name
+        actor: payload.actor.email || payload.actor.name,
+        revertedFields: unauthorizedChanges.map(c => c.field),
+        allowedFields: allowedChanges.map(c => c.field)
       });
 
-      // After successful revert, update cache with the RESTORED values (from previous state)
-      // This ensures future changes can be properly reverted
       if (hasProtectedNow && previous) {
         this.updateCache(current.id, {
           slaType: previous.slaType ?? existingCache?.slaType ?? current.slaType,
@@ -527,7 +742,13 @@ export class EnforcementEngine {
         });
       }
 
-      return { enforced: true, reason: 'Unauthorized change reverted', changes };
+      return {
+        enforced: true,
+        reason: allowedChanges.length > 0 ? 'Partial revert — unauthorized fields reverted' : 'Unauthorized change reverted',
+        changes: unauthorizedChanges,
+        allowedChanges,
+        unauthorizedChanges
+      };
     } catch (error) {
       logger.error('Failed to revert changes', {
         issueId: current.id,
@@ -545,13 +766,20 @@ export class EnforcementEngine {
     slaStartedAt?: string | null;
     slaBreachesAt?: string | null;
     priority?: number;
+    /** Set to true only for authorized slaBreachesAt changes — updates the immutable baseline */
+    updateOriginalSlaBreachesAt?: boolean;
   }): void {
-    // Preserve createdAt — it is the immutable baseline and must never be overwritten
+    // Preserve immutable baseline fields — createdAt and originalSlaBreachesAt must never be
+    // overwritten by webhook-derived or workflow-computed values. Only updateOriginalSlaBreachesAt:true
+    // (used for authorized sla changes) is allowed to update originalSlaBreachesAt.
     const existing = this.slaCache.get(issueId);
     this.slaCache.set(issueId, {
       slaType: values.slaType || null,
       slaStartedAt: values.slaStartedAt || null,
       slaBreachesAt: values.slaBreachesAt || null,
+      originalSlaBreachesAt: values.updateOriginalSlaBreachesAt
+        ? (values.slaBreachesAt ?? null)
+        : (existing?.originalSlaBreachesAt ?? values.slaBreachesAt ?? null),
       priority: values.priority,
       createdAt: existing?.createdAt ?? null,
       cachedAt: new Date()
@@ -600,20 +828,156 @@ export class EnforcementEngine {
   }
 
   /**
-   * Check if user is in allowlist
+   * Compute slaBreachesAt = createdAt + rule.hours for the best-matching SLA rule.
+   * Returns null if no rule applies (caller should fall back to duration-based calculation).
+   *
+   * Matching: all label constraints must be satisfied AND teamId must match when provided.
+   * Most specific rule (most conditions) wins.
    */
-  private isAuthorizedUser(actor: WebhookActor): boolean {
-    return this.config.allowlist.some(allowed => {
-      // Match by ID
-      if (allowed.id && actor.id === allowed.id) {
-        return true;
+  private resolveBreachFromRules(
+    createdAt: string,
+    priority: number,
+    labels: IssueLabel[],
+    teamId?: string
+  ): Date | null {
+    if (!this.config.slaRules || this.config.slaRules.length === 0) return null;
+
+    const priorityNameMap: Record<number, string> = {
+      0: 'no_priority', 1: 'urgent', 2: 'high', 3: 'normal', 4: 'low'
+    };
+    const priorityName = priorityNameMap[priority];
+    const labelNames = (labels ?? []).map(l => l.name);
+
+    let bestRule: (typeof this.config.slaRules)[number] | null = null;
+    let bestSpecificity = -1;
+
+    for (const rule of this.config.slaRules) {
+      // Team constraint: skip if rule requires a specific team and we can't verify it
+      if (rule.teamId) {
+        if (!teamId || rule.teamId !== teamId) continue;
       }
-      // Match by email
-      if (allowed.email && actor.email === allowed.email) {
-        return true;
+
+      // Label constraint: all required labels must be present on the issue
+      if (rule.labels && rule.labels.length > 0) {
+        if (!rule.labels.every(l => labelNames.includes(l))) continue;
       }
-      return false;
+
+      // Most specific match wins (most conditions = highest specificity)
+      const specificity = (rule.teamId ? 1 : 0) + (rule.labels?.length ?? 0);
+      if (specificity > bestSpecificity) {
+        bestRule = rule;
+        bestSpecificity = specificity;
+      }
+    }
+
+    if (!bestRule) return null;
+
+    const window = bestRule.priorityWindows.find(
+      w => w.priority === priority || w.priority === priorityName
+    );
+    if (!window) return null;
+
+    logger.debug('resolveBreachFromRules: matched rule', {
+      rule: bestRule.name,
+      priority,
+      priorityName,
+      hours: window.hours,
+      createdAt
     });
+
+    return new Date(new Date(createdAt).getTime() + window.hours * 3600 * 1000);
+  }
+
+  /**
+   * Resolve the set of permissions an actor has by walking the allowlist tree.
+   *
+   * Resolution rules:
+   * - Walk every root entry; recursively walk groups.
+   * - An entry matches when: email/id matches (leaf), or actor is a member of
+   *   the linearTeamId team (group), or the actor matches a nested sub-entry.
+   * - Collect ALL matching permission sets and return their union.
+   * - An entry without `permissions` inherits the effective permissions of its
+   *   parent; root entries without `permissions` default to ALL_PERMISSIONS.
+   * - Empty Set returned → actor is not authorized for any field.
+   */
+  getActorPermissions(actor: WebhookActor): Set<Permission> {
+    const collected = new Set<Permission>();
+
+    for (const entry of this.config.allowlist) {
+      const perms = this.resolveEntry(entry, actor, ALL_PERMISSIONS, 0);
+      for (const p of perms) {
+        collected.add(p);
+      }
+    }
+
+    return collected;
+  }
+
+  /**
+   * Recursively resolve an allowlist entry against an actor.
+   * Returns the set of permissions matched, or an empty set if no match.
+   */
+  private resolveEntry(
+    entry: AllowlistEntry,
+    actor: WebhookActor,
+    parentPermissions: Permission[],
+    depth: number
+  ): Set<Permission> {
+    if (depth > 10) return new Set();
+
+    // Effective permissions = own permissions if set, otherwise inherit from parent
+    const effectivePermissions: Permission[] = (entry as any).permissions ?? parentPermissions;
+
+    if (isAllowlistGroup(entry)) {
+      const group = entry as AllowlistGroup;
+      const result = new Set<Permission>();
+
+      // Match via linearTeamId membership
+      if (group.linearTeamId) {
+        const teamMembers = this.teamMemberCache.get(group.linearTeamId) ?? [];
+        const inTeam = teamMembers.some(
+          m => (actor.id && m.id === actor.id) || (actor.email && m.email === actor.email)
+        );
+        if (inTeam) {
+          for (const p of effectivePermissions) result.add(p);
+        }
+      }
+
+      // Recurse into nested members
+      for (const member of group.members ?? []) {
+        const subPerms = this.resolveEntry(member, actor, effectivePermissions, depth + 1);
+        for (const p of subPerms) result.add(p);
+      }
+
+      return result;
+    } else {
+      // Leaf — match by id or email
+      const leaf = entry as AllowlistLeaf;
+      const matched =
+        (leaf.id && actor.id === leaf.id) ||
+        (leaf.email && actor.email === leaf.email);
+
+      if (matched) {
+        return new Set(effectivePermissions);
+      }
+      return new Set();
+    }
+  }
+
+  /**
+   * Map a detected change to the permission required to authorize it.
+   *
+   * slaStartedAt requires `slaBaseline` — it is the clock anchor and the most
+   * restricted field. All other SLA fields (slaType, slaBreachesAt, risk thresholds)
+   * require only the general `sla` permission.
+   */
+  private changeRequiresPermission(change: ChangeDetection): Permission {
+    switch (change.field) {
+      case 'labels':         return 'labels';
+      case 'priority':       return 'priority';
+      case 'slaStartedAt':   return 'slaBaseline';
+      default:               return 'sla';
+    }
   }
 
   /**
@@ -829,18 +1193,23 @@ export class EnforcementEngine {
       if (cached?.createdAt && current.slaStartedAt !== cached.createdAt) {
         const alreadyDetected = changes.find(c => c.field === 'slaStartedAt');
         if (alreadyDetected) {
-          // Override the revert target to createdAt rather than the previous value
+          // Override the revert target to createdAt rather than the previous value.
+          // Mark as fromBaseline so the permission check always reverts it — the drift
+          // was caused by a workflow, not the actor intentionally moving the clock.
           alreadyDetected.oldValue = cached.createdAt;
           alreadyDetected.description = `SLA start date changed from issue creation date`;
           alreadyDetected.revertDescription = `Restored SLA start date to issue creation date (${cached.createdAt})`;
+          alreadyDetected.fromBaseline = true;
         } else {
-          // Not caught by the updatedFrom check — add it now
+          // Not caught by the updatedFrom check — add it now.
+          // fromBaseline=true ensures this is always reverted regardless of actor permissions.
           changes.push({
             field: 'slaStartedAt',
             oldValue: cached.createdAt,
             newValue: current.slaStartedAt,
             description: `SLA start date (${current.slaStartedAt ?? 'unset'}) differs from issue creation date (${cached.createdAt})`,
-            revertDescription: `Restored SLA start date to issue creation date (${cached.createdAt})`
+            revertDescription: `Restored SLA start date to issue creation date (${cached.createdAt})`,
+            fromBaseline: true
           });
           logger.info('Canonical baseline: detected slaStartedAt drift', {
             issueId: current.id,
@@ -937,15 +1306,65 @@ export class EnforcementEngine {
       }
       // NO FALLBACK to currentState - that has the wrong (workflow-generated) values!
       
-      // When baseline mode is on, always use createdAt as slaStartedAt regardless
-      // of what previous state or cache says
+      // When baseline mode is on, always use createdAt as slaStartedAt.
+      // Also recompute slaBreachesAt = createdAt + (current duration) so the SLA
+      // policy duration is preserved but anchored to the creation date instead of now.
+      // e.g. if Linear set slaStartedAt=today and slaBreachesAt=today+24h (Urgent policy),
+      // we set slaStartedAt=createdAt and slaBreachesAt=createdAt+24h (already breached if old).
       if (this.config.protectedFields.slaCreatedAtBaseline) {
         const cached = this.slaCache.get(issueId);
         if (cached?.createdAt) {
           slaStartedAt = cached.createdAt;
+
+          // Priority 1: SLA rule lookup — createdAt + rule.hours(revertedPriority)
+          const revertedPriority = priorityChange.oldValue as number;
+          const ruleBreachesAt = this.resolveBreachFromRules(
+            cached.createdAt,
+            revertedPriority,
+            currentState?.labels ?? [],
+            (currentState as any)?.teamId
+          );
+          if (ruleBreachesAt) {
+            slaBreachesAt = ruleBreachesAt.toISOString();
+            logger.info('slaCreatedAtBaseline: computed slaBreachesAt from SLA rule (priority revert)', {
+              issueId,
+              createdAt: cached.createdAt,
+              revertedPriority,
+              correctSlaBreachesAt: slaBreachesAt
+            });
+          } else {
+            // Priority 2: duration-based (createdAt + Linear's computed window)
+            const currentStartedAt = currentState?.slaStartedAt;
+            const currentBreachesAt = currentState?.slaBreachesAt;
+            if (currentStartedAt && currentBreachesAt) {
+              const durationMs = new Date(currentBreachesAt).getTime() - new Date(currentStartedAt).getTime();
+              const correctBreachesAt = new Date(new Date(cached.createdAt).getTime() + durationMs);
+              slaBreachesAt = correctBreachesAt.toISOString();
+              logger.info('slaCreatedAtBaseline: computed slaBreachesAt = createdAt + current duration', {
+                issueId,
+                createdAt: cached.createdAt,
+                currentSlaStartedAt: currentStartedAt,
+                currentSlaBreachesAt: currentBreachesAt,
+                durationMs,
+                correctSlaBreachesAt: slaBreachesAt
+              });
+            } else if (!slaBreachesAt) {
+              // Priority 3: fall back to cached values
+              const targetBreachesAt = cached.originalSlaBreachesAt ?? cached.slaBreachesAt;
+              if (targetBreachesAt) {
+                slaBreachesAt = targetBreachesAt;
+                logger.info('slaCreatedAtBaseline: falling back to cached slaBreachesAt', {
+                  issueId,
+                  using: targetBreachesAt
+                });
+              }
+            }
+          }
+
           logger.info('slaCreatedAtBaseline: overriding slaStartedAt with createdAt for priority revert', {
             issueId,
-            createdAt: cached.createdAt
+            createdAt: cached.createdAt,
+            slaBreachesAt
           });
         }
       }
@@ -1035,21 +1454,24 @@ export class EnforcementEngine {
       logger.debug('SLA change detected, gathering complete SLA state');
       
       // Check if slaType was in the webhook's updatedFrom
+      // liveIssue is fetched lazily and reused below for slaBreachesAt duration calculation
+      let liveIssue: IssueData | null = null;
       if (previousState?.slaType !== undefined) {
         // slaType changed, use the old value
         update.slaType = previousState.slaType;
         logger.debug('Using slaType from webhook previousState', { slaType: update.slaType });
       } else {
         // slaType didn't change (not in updatedFrom), check current issue
-        const currentIssue = await this.linearClient.getIssue(issueId);
+        liveIssue = await this.linearClient.getIssue(issueId);
         logger.debug('Fetched current issue for slaType', {
-          currentSlaType: currentIssue.slaType,
-          currentSlaStartedAt: currentIssue.slaStartedAt
+          currentSlaType: liveIssue.slaType,
+          currentSlaStartedAt: liveIssue.slaStartedAt,
+          currentSlaBreachesAt: liveIssue.slaBreachesAt
         });
-        
-        if (currentIssue.slaType) {
+
+        if (liveIssue.slaType) {
           // SLA type is still set, user probably just changed the start time
-          update.slaType = currentIssue.slaType;
+          update.slaType = liveIssue.slaType;
           logger.debug('Using slaType from current issue (unchanged)', { slaType: update.slaType });
         } else {
           // SLA was removed entirely but slaType wasn't in updatedFrom
@@ -1086,7 +1508,86 @@ export class EnforcementEngine {
         }
         update.slaStartedAt = value;
       }
-      
+
+      // If slaBreachesAt is still not set, restore it via the following priority order:
+      //
+      // 1. originalSlaBreachesAt from cache — the value locked in by the last agent
+      //    correction (isAgentAction block). Immune to async workflow timing issues:
+      //    if the user rapidly toggled Urgent→High→Urgent, Linear's High-policy workflow
+      //    may arrive after the Urgent toggle and give a 7-day duration. The cached
+      //    original (e.g. April 2 for a 24h Urgent policy) is always correct.
+      //
+      // 2. createdAt + current duration — used on first correction before originalSlaBreachesAt
+      //    has been set. Falls back to liveIssue SLA when currentState lacks SLA fields
+      //    (happens for priority-only webhooks where Linear omits SLA from the payload).
+      //
+      // 3. cached slaBreachesAt — last-resort fallback.
+      if (!update.slaBreachesAt) {
+        const cachedSLA = this.slaCache.get(issueId);
+        const createdAt = cachedSLA?.createdAt;
+
+        // Priority 1: SLA rule lookup — createdAt + rule.hours(currentPriority)
+        if (createdAt && currentState?.priority !== undefined) {
+          const ruleBreachesAt = this.resolveBreachFromRules(
+            createdAt,
+            currentState.priority,
+            currentState.labels ?? [],
+            (currentState as any).teamId
+          );
+          if (ruleBreachesAt) {
+            update.slaBreachesAt = ruleBreachesAt;
+            logger.info('slaCreatedAtBaseline: computed slaBreachesAt from SLA rule', {
+              issueId,
+              createdAt,
+              priority: currentState.priority,
+              correctSlaBreachesAt: update.slaBreachesAt
+            });
+          }
+        }
+
+        // Priority 2: compute from current duration (createdAt + Linear's computed window)
+        // For priority-only webhooks, Linear does not include SLA fields in the data payload —
+        // currentState.slaStartedAt/slaBreachesAt will be null. Fall back to liveIssue (already
+        // fetched above for slaType) which reflects the values Linear's workflow just computed.
+        if (!update.slaBreachesAt) {
+          const currentStartedAt = currentState?.slaStartedAt ?? liveIssue?.slaStartedAt;
+          const currentBreachesAt = currentState?.slaBreachesAt ?? liveIssue?.slaBreachesAt;
+
+          if (createdAt && currentStartedAt && currentBreachesAt) {
+            const durationMs = new Date(currentBreachesAt).getTime() - new Date(currentStartedAt).getTime();
+            update.slaBreachesAt = new Date(new Date(createdAt).getTime() + durationMs);
+            logger.info('slaCreatedAtBaseline: computed slaBreachesAt = createdAt + current duration', {
+              issueId,
+              createdAt,
+              currentSlaStartedAt: currentStartedAt,
+              currentSlaBreachesAt: currentBreachesAt,
+              source: currentState?.slaStartedAt ? 'webhook currentState' : 'liveIssue (fetched)',
+              durationMs,
+              durationHours: Math.round(durationMs / 1000 / 60 / 60 * 10) / 10,
+              correctSlaBreachesAt: update.slaBreachesAt
+            });
+          }
+        }
+
+        // Priority 3: originalSlaBreachesAt from cache (last resort — may be stale after priority change)
+        if (!update.slaBreachesAt && cachedSLA?.originalSlaBreachesAt) {
+          update.slaBreachesAt = new Date(cachedSLA.originalSlaBreachesAt);
+          logger.info('slaCreatedAtBaseline: falling back to originalSlaBreachesAt from cache', {
+            issueId,
+            originalSlaBreachesAt: cachedSLA.originalSlaBreachesAt
+          });
+        }
+
+        // Priority 4: last-resort cached value
+        if (!update.slaBreachesAt && cachedSLA?.slaBreachesAt) {
+          update.slaBreachesAt = new Date(cachedSLA.slaBreachesAt);
+          logger.info('slaCreatedAtBaseline: falling back to cached slaBreachesAt', {
+            issueId,
+            using: cachedSLA.slaBreachesAt
+          });
+        }
+      }
+
       logger.info('Restoring SLA (writable fields only)', {
         slaType: update.slaType,
         slaStartedAt: update.slaStartedAt,
@@ -1149,43 +1650,64 @@ export class EnforcementEngine {
   }
 
   /**
-   * Post AIG-compliant comment explaining what happened
+   * Post AIG-compliant comment explaining what was and wasn't reverted.
+   * Handles partial authorization — some fields allowed through, others reverted.
    */
   private async postAgentComment(
     issueId: string,
     actor: WebhookActor,
-    changes: ChangeDetection[],
+    allowedChanges: ChangeDetection[],
+    unauthorizedChanges: ChangeDetection[],
     reverted: boolean
   ): Promise<void> {
     const userMention = this.config.behavior.mentionUser && actor.id
       ? `[${actor.name}](${actor.url})`
       : actor.name;
 
-    const changesDescription = changes
-      .filter(c => c.description) // Only include changes with descriptions
+    const isPartial = allowedChanges.length > 0 && unauthorizedChanges.length > 0;
+
+    const unauthorizedDescription = unauthorizedChanges
+      .filter(c => c.description)
       .map(c => `- ${c.description}`)
       .join('\n');
 
-    const actionDescription = reverted
-      ? changes.filter(c => c.revertDescription).map(c => `- ✅ ${c.revertDescription}`).join('\n')
-      : '- ℹ️ Detected but not reverted (notify-only mode)';
+    const allowedDescription = allowedChanges
+      .filter(c => c.description)
+      .map(c => `- ${c.description} _(allowed)_`)
+      .join('\n');
+
+    const allChangesDescription = [unauthorizedDescription, allowedDescription]
+      .filter(Boolean)
+      .join('\n');
+
+    let actionDescription: string;
+    if (reverted) {
+      const revertLines = unauthorizedChanges
+        .filter(c => c.revertDescription)
+        .map(c => `- ✅ ${c.revertDescription}`)
+        .join('\n');
+      actionDescription = revertLines || '- ✅ Reverted unauthorized changes';
+    } else {
+      actionDescription = '- ℹ️ Detected but not reverted (notify-only mode)';
+    }
 
     const protectedItems = this.config.protectedLabels.join(', ');
-    
-    // Build list of protected field types for the comment
     const protectedFieldTypes: string[] = [];
     if (this.config.protectedFields.label) protectedFieldTypes.push(`${protectedItems} label(s)`);
     if (this.config.protectedFields.priority) protectedFieldTypes.push('priority');
     if (this.config.protectedFields.sla) protectedFieldTypes.push('SLA fields');
     const protectedFieldsText = protectedFieldTypes.join(', ');
 
-    const comment = `
+    const heading = isPartial
+      ? `${userMention} - I detected changes to this issue. Some were within your permissions; others were not${reverted ? ' and have been reverted' : ''}.`
+      : `${userMention} - I detected an unauthorized change to this issue${reverted ? ' and have reverted it' : ''}.`;
 
-${userMention} - I detected an unauthorized change to this issue${reverted ? ' and have reverted it' : ''}.
+    const comment = `
+${heading}
 
 **What happened:**
 - User: ${userMention}
-${changesDescription}
+${allChangesDescription}
 - Time: ${new Date().toLocaleString()}
 
 **What I did:**

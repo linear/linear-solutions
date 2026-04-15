@@ -7,10 +7,17 @@ import logger from './utils/logger';
 import { withRetry } from './utils/error-handler';
 
 export class LinearClient {
-  private apiKey: string;
+  private authHeader: string;
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey;
+    // Personal API keys start with "lin_api_" and are passed as-is.
+    // OAuth access tokens require the "Bearer " prefix.
+    // If the caller already included "Bearer ", don't double-add it.
+    if (apiKey.startsWith('lin_api_') || apiKey.startsWith('Bearer ')) {
+      this.authHeader = apiKey;
+    } else {
+      this.authHeader = `Bearer ${apiKey}`;
+    }
   }
 
   /**
@@ -21,7 +28,7 @@ export class LinearClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': this.apiKey,
+        'Authorization': this.authHeader,
       },
       body: JSON.stringify({ query, variables })
     });
@@ -522,6 +529,51 @@ export class LinearClient {
         }));
       },
       { operation: `Get issues with label ${labelId}` }
+    );
+  }
+
+  /**
+   * Get all members of a Linear team by team ID.
+   * Used at startup to resolve linearTeamId entries in the allowlist.
+   */
+  async getTeamMembers(teamId: string): Promise<LinearUser[]> {
+    return withRetry(
+      async () => {
+        const query = `
+          query($teamId: String!) {
+            team(id: $teamId) {
+              name
+              members {
+                nodes {
+                  id
+                  email
+                  name
+                }
+              }
+            }
+          }
+        `;
+
+        const data = await this.graphql(query, { teamId });
+
+        if (!data.team) {
+          logger.warn('Team not found', { teamId });
+          return [];
+        }
+
+        logger.info('Fetched team members', {
+          teamId,
+          teamName: data.team.name,
+          memberCount: data.team.members.nodes.length
+        });
+
+        return data.team.members.nodes.map((user: any) => ({
+          id: user.id,
+          email: user.email,
+          name: user.name
+        }));
+      },
+      { operation: `Get team members for ${teamId}` }
     );
   }
 

@@ -10,21 +10,93 @@
     "priority": true,
     "slaCreatedAtBaseline": false
   },
+
   "allowlist": [
     {
-      "email": "security-lead@example.com",
-      "name": "Security Team Lead"
+      "name": "SLA Admins",
+      "permissions": ["labels", "sla", "priority", "slaBaseline"],
+      "members": [
+        { "email": "sla-admin@yourcompany.com", "name": "SLA Admin" }
+      ]
     },
+
     {
-      "email": "admin@example.com"
+      "name": "Engineering Org",
+      "permissions": ["labels"],
+      "members": [
+
+        {
+          "name": "Platform Division",
+          "linearTeamId": "your-platform-team-id",
+          "permissions": ["labels", "sla"],
+          "members": [
+            {
+              "name": "Platform Team Leads",
+              "permissions": ["labels", "sla", "priority"],
+              "members": [
+                { "email": "platform-lead@yourcompany.com", "name": "Platform Lead" }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "Mobile Division",
+          "linearTeamId": "your-mobile-team-id",
+          "permissions": ["labels", "sla"],
+          "members": [
+            {
+              "email": "mobile-lead@yourcompany.com",
+              "name": "Mobile Lead",
+              "permissions": ["labels", "sla", "priority"]
+            }
+          ]
+        }
+
+      ]
     },
+
     {
-      "id": "linear-user-id-here",
-      "name": "Authorized User"
+      "email": "individual@yourcompany.com",
+      "name": "Individual User (flat entry — backward compatible)"
     }
   ],
+
+  "slaRules": [
+    {
+      "name": "Delivery Bug SLA",
+      "teamId": "DELIVERY",
+      "labels": ["Bug"],
+      "priorityWindows": [
+        { "priority": "urgent", "hours": 24 },
+        { "priority": "high",   "hours": 168 },
+        { "priority": "normal", "hours": 720 },
+        { "priority": "low",    "hours": 2880 }
+      ]
+    },
+    {
+      "name": "Security Vulnerability SLA",
+      "labels": ["Vulnerability"],
+      "priorityWindows": [
+        { "priority": "urgent", "hours": 4 },
+        { "priority": "high",   "hours": 24 },
+        { "priority": "normal", "hours": 72 }
+      ]
+    },
+    {
+      "name": "Platform Default SLA",
+      "teamId": "PLATFORM",
+      "priorityWindows": [
+        { "priority": "urgent", "hours": 8 },
+        { "priority": "high",   "hours": 72 },
+        { "priority": "normal", "hours": 336 },
+        { "priority": "low",    "hours": 1440 }
+      ]
+    }
+  ],
+
   "agent": {
-    "name": "Vulnerability Protection Agent",
+    "name": "SLA Protection Agent",
     "identifier": "🤖 [AGENT]"
   },
   "slack": {
