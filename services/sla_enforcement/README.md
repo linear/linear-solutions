@@ -391,6 +391,16 @@ Each rule set specifies:
 {
   "slaRules": [
     {
+      "name": "OoSLA Issues",
+      "labels": ["oosla"],
+      "priorityWindows": [
+        { "priority": "urgent", "hours": 24 },
+        { "priority": "high",   "hours": 168 },
+        { "priority": "normal", "hours": 672 },
+        { "priority": "low",    "hours": 2880 }
+      ]
+    },
+    {
       "name": "Delivery Bug SLA",
       "teamId": "DELIVERY",
       "labels": ["Bug"],
@@ -425,7 +435,8 @@ Each rule set specifies:
 ```
 
 In this example:
-- A Delivery `Bug` issue at Urgent priority must breach in 24 hours
+- Any `oosla` issue at Urgent must breach in 24 hours (applies across all teams)
+- A Delivery `Bug` issue at Urgent must breach in 24 hours (teamId + label — higher specificity than label-only)
 - A `Vulnerability` issue at Urgent must breach in 4 hours (applies to all teams)
 - Any Platform issue with no label match falls back to the Platform default rule
 - Issues not matched by any rule are not validated for duration (SLA fields are still protected from unauthorized changes)
