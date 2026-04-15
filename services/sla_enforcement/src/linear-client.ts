@@ -7,10 +7,17 @@ import logger from './utils/logger';
 import { withRetry } from './utils/error-handler';
 
 export class LinearClient {
-  private apiKey: string;
+  private authHeader: string;
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey;
+    // Personal API keys start with "lin_api_" and are passed as-is.
+    // OAuth access tokens require the "Bearer " prefix.
+    // If the caller already included "Bearer ", don't double-add it.
+    if (apiKey.startsWith('lin_api_') || apiKey.startsWith('Bearer ')) {
+      this.authHeader = apiKey;
+    } else {
+      this.authHeader = `Bearer ${apiKey}`;
+    }
   }
 
   /**
@@ -21,7 +28,7 @@ export class LinearClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': this.apiKey,
+        'Authorization': this.authHeader,
       },
       body: JSON.stringify({ query, variables })
     });
@@ -522,6 +529,98 @@ export class LinearClient {
         }));
       },
       { operation: `Get issues with label ${labelId}` }
+    );
+  }
+
+  /**
+   * Get all members of a Linear team.
+   *
+   * Accepts either a UUID ("abc123-...") or a team key ("ADM", "ENG").
+   * UUIDs use the team(id:) query; keys use teams(filter:{key:{eq:}}).
+   * This lets config.json use the short key shown in the Linear UI rather
+   * than requiring the user to dig out the internal UUID.
+   */
+  async getTeamMembers(teamId: string): Promise<LinearUser[]> {
+    return withRetry(
+      async () => {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teamId);
+
+        if (isUuid) {
+          const query = `
+            query($teamId: String!) {
+              team(id: $teamId) {
+                name
+                members {
+                  nodes {
+                    id
+                    email
+                    name
+                  }
+                }
+              }
+            }
+          `;
+
+          const data = await this.graphql(query, { teamId });
+
+          if (!data.team) {
+            logger.warn('Team not found by UUID', { teamId });
+            return [];
+          }
+
+          logger.info('Fetched team members by UUID', {
+            teamId,
+            teamName: data.team.name,
+            memberCount: data.team.members.nodes.length
+          });
+
+          return data.team.members.nodes.map((user: any) => ({
+            id: user.id,
+            email: user.email,
+            name: user.name
+          }));
+        } else {
+          // Team key lookup (e.g. "ADM", "ENG")
+          const query = `
+            query($key: String!) {
+              teams(filter: { key: { eq: $key } }) {
+                nodes {
+                  id
+                  name
+                  members {
+                    nodes {
+                      id
+                      email
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          `;
+
+          const data = await this.graphql(query, { key: teamId });
+          const team = data.teams?.nodes?.[0];
+
+          if (!team) {
+            logger.warn('Team not found by key', { teamKey: teamId });
+            return [];
+          }
+
+          logger.info('Fetched team members by key', {
+            teamKey: teamId,
+            teamName: team.name,
+            memberCount: team.members.nodes.length
+          });
+
+          return team.members.nodes.map((user: any) => ({
+            id: user.id,
+            email: user.email,
+            name: user.name
+          }));
+        }
+      },
+      { operation: `Get team members for ${teamId}` }
     );
   }
 

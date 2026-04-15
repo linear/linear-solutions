@@ -43,12 +43,19 @@ async function main() {
 
     // Initialize clients
     const linearClient = new LinearClient(process.env.LINEAR_API_KEY!);
-    const enforcementEngine = new EnforcementEngine(config, linearClient);
     const slackNotifier = new SlackNotifier(config);
 
-    // Run startup validation
+    // Run startup validation — also resolves linearTeamId entries into the team member cache
     const validator = new StartupValidator(config, linearClient);
     await validator.validate();
+
+    // Hand the team member cache to the enforcement engine so getActorPermissions
+    // can resolve linearTeamId group membership without any runtime API calls.
+    const teamMemberCache = validator.getTeamMemberCache();
+    const enforcementEngine = new EnforcementEngine(config, linearClient, teamMemberCache);
+
+    // Start background refresh of team member cache (every 4 hours)
+    validator.startTeamRefresh();
 
     // Proactively cache SLA values for all protected issues
     // This ensures we have the "original" SLA values before any changes happen
