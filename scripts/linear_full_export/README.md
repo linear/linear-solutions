@@ -5,6 +5,8 @@ files via the Linear GraphQL API. Intended to be run as a cron job for disaster
 recovery / compliance backups where the Linear UI's CSV export (issues only)
 isn't enough.
 
+[Video Walkthrough](https://share.linear.app/9FPnJSQM)
+
 ## What gets exported
 
 One JSONL file per entity:
