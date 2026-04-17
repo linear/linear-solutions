@@ -68,10 +68,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional client-side rate limit in requests per second.",
     )
     parser.add_argument(
+        "--oauth-token",
+        type=str,
+        default=None,
+        help="Linear OAuth 2.0 access token (recommended). "
+        "Defaults to $LINEAR_OAUTH_TOKEN.",
+    )
+    parser.add_argument(
         "--api-key",
         type=str,
         default=None,
-        help="Linear API key. Defaults to $LINEAR_API_KEY.",
+        help="Linear personal API key (fallback if no OAuth token). "
+        "Defaults to $LINEAR_API_KEY.",
+    )
+    parser.add_argument(
+        "--token-type",
+        choices=["auto", "oauth", "personal"],
+        default="auto",
+        help="Override auth scheme detection (default: auto - OAuth uses "
+        "'Bearer <token>', personal keys starting with 'lin_api_' are sent "
+        "as-is).",
     )
     parser.add_argument(
         "--log-level",
@@ -83,7 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--env-file",
         type=Path,
         default=Path(".env"),
-        help="Path to a .env file to load LINEAR_API_KEY from (default: ./.env).",
+        help="Path to a .env file to load LINEAR_OAUTH_TOKEN / LINEAR_API_KEY "
+        "from (default: ./.env).",
     )
     return parser
 
@@ -98,16 +115,26 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     _load_dotenv(args.env_file)
+
+    oauth_token = args.oauth_token or os.environ.get("LINEAR_OAUTH_TOKEN")
     api_key = args.api_key or os.environ.get("LINEAR_API_KEY")
-    if not api_key:
+
+    if oauth_token:
+        token = oauth_token
+        token_type = "oauth" if args.token_type == "auto" else args.token_type
+    elif api_key:
+        token = api_key
+        token_type = "personal" if args.token_type == "auto" else args.token_type
+    else:
         print(
-            "error: LINEAR_API_KEY is not set. Pass --api-key, export the env "
-            "var, or add it to .env.",
+            "error: no Linear credentials found. Set LINEAR_OAUTH_TOKEN "
+            "(recommended) or LINEAR_API_KEY via env, --oauth-token / "
+            "--api-key flags, or a .env file.",
             file=sys.stderr,
         )
         return 2
 
-    with LinearClient(api_key, max_rps=args.max_rps) as client:
+    with LinearClient(token, token_type=token_type, max_rps=args.max_rps) as client:
         if args.mode == "full":
             run_full_backup(client, args.output_dir, page_size=args.page_size)
         else:

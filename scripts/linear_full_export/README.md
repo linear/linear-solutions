@@ -37,26 +37,55 @@ pip install -r requirements.txt
 
 ## Configure
 
-Create a Linear API key:
+The script authenticates with Linear in one of two ways. **An OAuth 2.0
+application is strongly recommended** for any scheduled / production backup;
+the personal API key path exists mainly for local testing.
 
-1. In Linear, open **Settings -> Security & access -> Personal API keys**.
-2. Create a new key.
-3. For a workspace-wide backup that includes **private teams**, the key must
-   belong to an admin user or a dedicated service account with admin access.
-   (A regular user's key will only see the teams that user is a member of.)
+### Recommended: OAuth 2.0 application (service-account style)
 
-Put the key in a `.env` file next to the script:
+OAuth is the right choice for a cron job because:
 
-```bash
-cp .env.example .env
-# then edit .env and set LINEAR_API_KEY=lin_api_...
-```
+- The token is **not tied to a specific user** - if the person who set this up
+  leaves the workspace, the backup keeps running.
+- You can scope it to **read-only** (`read`), so a leaked token can't mutate
+  your workspace.
+- It can be **revoked and rotated** from the Linear admin UI without touching
+  anyone's personal account.
+- When installed with **Actor=application**, requests are attributed to the
+  app rather than a person in audit logs.
 
-Or export it in the shell:
+Steps:
 
-```bash
-export LINEAR_API_KEY=lin_api_...
-```
+1. In Linear, open **Settings -> API -> OAuth Applications** and create a new
+   application. Any values for name / redirect URI are fine - you won't be
+   using the redirect for this use case.
+2. Once you have created the app, you will **Create & copy token** then select "App" and request all `read` scopes. This will install the app in your workspace and give you the API key you need. 
+3. Ensure that the application has access to all Private Teams that you would like exported as well by going to **Settings -> Applications** and selecting the newly created app.
+4. Put the token in `.env`:
+
+   ```bash
+   cp .env.example .env
+   # edit .env and set LINEAR_OAUTH_TOKEN=<the access token>
+   ```
+
+   Or export it: `export LINEAR_OAUTH_TOKEN=<token>`.
+
+The script sends OAuth tokens with the standard `Authorization: Bearer <token>`
+header automatically.
+
+### Fallback: personal API key
+
+For quick local testing you can use a personal key instead:
+
+1. In Linear, open **Settings -> Security & access -> Personal API keys** and
+   create a key.
+2. For a workspace-wide backup including **private teams**, the key must
+   belong to an admin user (a regular user's key only sees teams that user is
+   in).
+3. Put it in `.env` as `LINEAR_API_KEY=lin_api_...` or
+   `export LINEAR_API_KEY=lin_api_...`.
+
+If both env vars are set, `LINEAR_OAUTH_TOKEN` wins.
 
 ## Usage
 

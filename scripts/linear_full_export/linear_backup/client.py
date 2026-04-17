@@ -27,11 +27,32 @@ def _is_complexity_error(exc: "LinearAPIError") -> bool:
     return "too complex" in msg or "complexity" in msg
 
 
+def _build_auth_header(token: str, token_type: str) -> str:
+    """Return the correct Authorization header for Linear.
+
+    Linear accepts personal API keys as a bare value (`Authorization: lin_api_...`)
+    and OAuth 2.0 access tokens with the standard Bearer prefix
+    (`Authorization: Bearer <token>`). We default to auto-detection based on the
+    `lin_api_` prefix, but the caller can force a scheme via `token_type`.
+    """
+    token = token.strip()
+    scheme = token_type.lower()
+    if scheme == "personal":
+        return token
+    if scheme == "oauth" or scheme == "bearer":
+        return f"Bearer {token}"
+    # auto
+    if token.startswith("lin_api_"):
+        return token
+    return f"Bearer {token}"
+
+
 class LinearClient:
     def __init__(
         self,
-        api_key: str,
+        token: str,
         *,
+        token_type: str = "auto",
         endpoint: str = LINEAR_GRAPHQL_ENDPOINT,
         timeout: float = 60.0,
         max_retries: int = 8,
@@ -39,8 +60,8 @@ class LinearClient:
         backoff_cap: float = 60.0,
         max_rps: float | None = None,
     ) -> None:
-        if not api_key:
-            raise ValueError("LINEAR_API_KEY is required")
+        if not token:
+            raise ValueError("A Linear token (OAuth access token or personal API key) is required")
         self._endpoint = endpoint
         self._max_retries = max_retries
         self._backoff_base = backoff_base
@@ -50,7 +71,7 @@ class LinearClient:
         self._client = httpx.Client(
             timeout=timeout,
             headers={
-                "Authorization": api_key,
+                "Authorization": _build_auth_header(token, token_type),
                 "Content-Type": "application/json",
                 "User-Agent": "linear-backup/0.1",
             },
