@@ -125,7 +125,7 @@ Each `.jsonl` file is one JSON object per line, keyed by `id`. Example
   "mode_last_run": "incremental",
   "last_synced_at": "2026-04-17T09:00:00.000Z",
   "last_full_at":   "2026-04-14T03:00:00.000Z",
-  "workspace": { "id": "...", "name": "Scout24", "urlKey": "scout24" },
+  "workspace": { "id": "...", "name": "Acme", "urlKey": "acme" },
   "counts": { "issues": 18234, "projects": 412, "initiatives": 22, "...": 0 }
 }
 ```
