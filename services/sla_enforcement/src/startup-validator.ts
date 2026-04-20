@@ -3,7 +3,7 @@
  * Also owns the linearTeamId → member cache used by the enforcement engine.
  */
 
-import { Config, AllowlistEntry, AllowlistLeaf, AllowlistGroup, isAllowlistGroup, LinearUser } from './types';
+import { Config, AllowlistEntry, AllowlistLeaf, AllowlistGroup, isAllowlistGroup, LinearUser, SlaConfigurationRule, LinearTeam } from './types';
 import { LinearClient } from './linear-client';
 import logger from './utils/logger';
 
@@ -16,6 +16,13 @@ export class StartupValidator {
    * Populated during validateAllowlistEntries() and refreshed on an interval.
    */
   private teamMemberCache: Map<string, LinearUser[]> = new Map();
+  private slaConfigRules: SlaConfigurationRule[] = [];
+  /**
+   * Maps every child team UUID to the set of all its ancestor team UUIDs.
+   * Built once at startup so child-team issues (e.g. BAC, MOB) are matched
+   * against parent-team SLA configurations (e.g. ENG) without hardcoding IDs.
+   */
+  private teamAncestorMap: Map<string, Set<string>> = new Map();
   private refreshTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -31,8 +38,10 @@ export class StartupValidator {
     logger.info('🔍 Running startup validation checks...');
 
     await this.validateLinearAPI();
+    await this.buildTeamAncestorMap();
     await this.validateProtectedLabels();
     await this.validateAllowlistEntries();
+    await this.loadSlaConfigurations();
     await this.validateWebhookSecret();
 
     if (this.config.slack.enabled) {
@@ -51,6 +60,24 @@ export class StartupValidator {
   }
 
   /**
+   * Returns the flat list of active SLA configuration rules fetched from Linear.
+   * The same array reference is mutated in-place on each refresh — pass this
+   * reference to EnforcementEngine so it always sees the latest rules.
+   */
+  getSlaConfigRules(): SlaConfigurationRule[] {
+    return this.slaConfigRules;
+  }
+
+  /**
+   * Returns the team ancestor map built at startup.
+   * Maps child team UUID → Set of all ancestor team UUIDs.
+   * Used by EnforcementEngine to match child-team issues against parent-team SLA rules.
+   */
+  getTeamAncestorMap(): Map<string, Set<string>> {
+    return this.teamAncestorMap;
+  }
+
+  /**
    * Start a background interval that re-fetches all linearTeamId members.
    * Call after validate() so the initial fetch is already done.
    */
@@ -62,6 +89,7 @@ export class StartupValidator {
     this.refreshTimer = setInterval(async () => {
       logger.info('Refreshing Linear team member cache...');
       await this.refreshTeamMembers();
+      await this.loadSlaConfigurations();
     }, intervalMs);
 
     // Don't keep the Node process alive just for this timer
@@ -87,6 +115,65 @@ export class StartupValidator {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Fetch all teams and build a map of child UUID → Set<ancestor UUIDs>.
+   * A team with parent ENG will have { ENG-UUID } in its ancestor set.
+   * A team three levels deep will have all three ancestors in its set.
+   * Called once at startup, before allowlist validation.
+   */
+  private async buildTeamAncestorMap(): Promise<void> {
+    try {
+      const teams = await this.linearClient.getAllTeams();
+
+      logger.info('Fetched workspace teams', {
+        count: teams.length,
+        teams: teams.map(t => ({
+          id: t.id,
+          key: t.key,
+          parentId: t.parent?.id ?? null
+        }))
+      });
+
+      // parentMap: child UUID → direct parent UUID
+      const parentMap = new Map<string, string>();
+      for (const team of teams) {
+        if (team.parent?.id) {
+          parentMap.set(team.id, team.parent.id);
+        }
+      }
+
+      // Walk each team's parent chain to collect all ancestors
+      for (const team of teams) {
+        const ancestors = new Set<string>();
+        let current = team.id;
+        while (parentMap.has(current)) {
+          const parent = parentMap.get(current)!;
+          ancestors.add(parent);
+          current = parent;
+        }
+        if (ancestors.size > 0) {
+          this.teamAncestorMap.set(team.id, ancestors);
+        }
+      }
+
+      logger.info('✓ Team hierarchy built', {
+        totalTeams: teams.length,
+        teamsWithAncestors: this.teamAncestorMap.size,
+        hierarchy: Array.from(this.teamAncestorMap.entries()).map(([child, ancestors]) => {
+          const childTeam = teams.find(t => t.id === child);
+          const ancestorKeys = Array.from(ancestors).map(
+            id => teams.find(t => t.id === id)?.key ?? id
+          );
+          return `${childTeam?.key ?? child} → [${ancestorKeys.join(', ')}]`;
+        })
+      });
+    } catch (error) {
+      logger.warn('⚠️  Failed to build team hierarchy — child-team SLA matching will use direct team ID only', {
+        error: (error as Error).message
+      });
+    }
+  }
 
   private async validateLinearAPI(): Promise<void> {
     try {
@@ -268,6 +355,66 @@ export class StartupValidator {
         });
       }
     }
+  }
+
+  /**
+   * Fetch slaConfigurations for every team referenced in the allowlist.
+   * Merges all results into a single flat array (removesSla entries excluded).
+   * Updates slaConfigRules in-place so existing references stay valid.
+   */
+  private async loadSlaConfigurations(): Promise<void> {
+    const teamIds = this.collectTeamIds();
+
+    if (teamIds.length === 0) {
+      logger.info('No linearTeamId entries in allowlist — skipping slaConfigurations fetch');
+      return;
+    }
+
+    const fresh: SlaConfigurationRule[] = [];
+
+    for (const teamId of teamIds) {
+      try {
+        const rules = await this.linearClient.getSlaConfigurations(teamId);
+        const active = rules.filter(r => !r.removesSla);
+        fresh.push(...active);
+        logger.info(`✓ Loaded ${active.length} SLA configuration(s) for team "${teamId}"`, {
+          skippedRemovesSla: rules.length - active.length
+        });
+      } catch (error) {
+        logger.warn(`⚠️  Failed to load SLA configurations for team "${teamId}", skipping`, {
+          error: (error as Error).message
+        });
+      }
+    }
+
+    // Mutate in-place so the EnforcementEngine's reference stays valid
+    this.slaConfigRules.splice(0, this.slaConfigRules.length, ...fresh);
+    logger.info(`✓ SLA configurations loaded — ${this.slaConfigRules.length} active rule(s) total`);
+  }
+
+  /**
+   * Collect all unique linearTeamId values from the allowlist (recursive).
+   */
+  private collectTeamIds(): string[] {
+    const ids = new Set<string>();
+
+    // Teams from the allowlist
+    const collect = (entries: AllowlistEntry[]) => {
+      for (const entry of entries) {
+        if (isAllowlistGroup(entry)) {
+          if (entry.linearTeamId) ids.add(entry.linearTeamId);
+          if (entry.members) collect(entry.members);
+        }
+      }
+    };
+    collect(this.config.allowlist);
+
+    // Additional teams explicitly listed for SLA config monitoring
+    for (const teamId of this.config.slaTeamIds ?? []) {
+      ids.add(teamId);
+    }
+
+    return Array.from(ids);
   }
 
   private async validateWebhookSecret(): Promise<void> {

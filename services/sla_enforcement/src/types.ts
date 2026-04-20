@@ -197,6 +197,13 @@ export interface Config {
   /** Hierarchical allowlist — replaces the old flat AllowlistUser[]. */
   allowlist: AllowlistEntry[];
   /**
+   * Additional team keys/UUIDs whose slaConfigurations should be fetched at startup.
+   * Use this for teams that have SLA rules in Linear but are not represented in the
+   * allowlist (e.g. sub-teams or teams whose members don't need explicit permissions).
+   * Team keys (e.g. "BAC") and UUIDs are both accepted.
+   */
+  slaTeamIds?: string[];
+  /**
    * Declared SLA rule sets, evaluated per issue to determine the expected breach window.
    *
    * Linear does not expose its SLA policy definitions via the API — only the
@@ -299,6 +306,7 @@ export interface IssueData {
   slaBreachesAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  teamId?: string | null;
   [key: string]: any;
 }
 
@@ -373,6 +381,30 @@ export interface AuditEntry {
 }
 
 // ============================================================================
+// SLA Configuration API Types
+// ============================================================================
+
+export type SlaConditionClause =
+  | { team:     { id:       { in: string[] } } }
+  | { priority: { in: number[] } }
+  | { labels:   { and: Array<{ or: Array<{ name: { eq: string } } | { parent: { name: { eq: string } } }> }> } };
+
+export interface SlaConfigurationRule {
+  id: string;
+  name: string;
+  /** Duration in milliseconds */
+  sla: number;
+  slaType: string | null;
+  /** When true this rule clears the SLA — skip it for breach calculation */
+  removesSla: boolean;
+  conditions: Array<{
+    issueFilter: {
+      and: SlaConditionClause[];
+    };
+  }>;
+}
+
+// ============================================================================
 // Linear SDK Response Types
 // ============================================================================
 
@@ -392,4 +424,10 @@ export interface LinearUser {
   id: string;
   email: string;
   name: string;
+}
+
+export interface LinearTeam {
+  id: string;
+  key: string;
+  parent?: { id: string } | null;
 }

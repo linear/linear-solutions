@@ -21,7 +21,9 @@ import {
   AllowlistLeaf,
   AllowlistGroup,
   isAllowlistGroup,
-  LinearUser
+  LinearUser,
+  SlaConfigurationRule,
+  SlaConditionClause
 } from './types';
 import { LinearClient } from './linear-client';
 import logger from './utils/logger';
@@ -61,7 +63,9 @@ export class EnforcementEngine {
   constructor(
     private config: Config,
     private linearClient: LinearClient,
-    private teamMemberCache: Map<string, LinearUser[]> = new Map()
+    private teamMemberCache: Map<string, LinearUser[]> = new Map(),
+    private slaConfigRules: SlaConfigurationRule[] = [],
+    private teamAncestorMap: Map<string, Set<string>> = new Map()
   ) {
     // Set cache file path next to audit log
     const logsDir = path.dirname(this.config.logging.auditLogPath);
@@ -117,11 +121,19 @@ export class EnforcementEngine {
    */
   async cacheProtectedIssues(): Promise<void> {
     logger.info('🔍 Proactively caching SLA values for protected issues...');
-    
+
     let cachedCount = 0;
     let skippedCount = 0;
-    
-    for (const labelName of this.config.protectedLabels) {
+
+    // Combine protectedLabels with labels referenced in slaConfigRules so that
+    // issues matched by SLA configuration rules are also seeded in the cache at
+    // startup. This ensures createdAt is captured before any webhook arrives.
+    const slaRuleLabels = this.extractSlaRuleLabels();
+    const allLabelsToCache = Array.from(
+      new Set([...this.config.protectedLabels, ...slaRuleLabels])
+    );
+
+    for (const labelName of allLabelsToCache) {
       try {
         // Find the label ID
         const label = await this.linearClient.findLabelByName(labelName);
@@ -264,10 +276,10 @@ export class EnforcementEngine {
       // slaStartedAt === createdAt, so this block won't fire again.
       if (this.config.protectedFields.slaCreatedAtBaseline) {
         const cached = this.slaCache.get(current.id);
-        const hasProtectedLabel = (current.labels || []).some((l: any) =>
+        const isProtected = (current.labels || []).some((l: any) =>
           this.config.protectedLabels.includes(l.name)
-        );
-        if (cached?.createdAt && hasProtectedLabel && current.slaStartedAt &&
+        ) || this.hasMatchingSlaRule(current);
+        if (cached?.createdAt && isProtected && current.slaStartedAt &&
             current.slaStartedAt !== cached.createdAt &&
             current.slaBreachesAt && current.slaType) {
           const ruleBreachesAt = this.resolveBreachFromRules(
@@ -321,7 +333,7 @@ export class EnforcementEngine {
     const currentLabels = current.labels || [];
     const previousLabels = previous?.labels || [];
     
-    const hasProtectedNow = this.hasProtectedLabel(currentLabels);
+    const hasProtectedNow = this.hasProtectedLabel(currentLabels) || this.hasMatchingSlaRule(current);
     let hadProtectedBefore = previousLabels.length > 0 ? this.hasProtectedLabel(previousLabels) : false;
     
     // IMPORTANT: Linear sends labelIds (UUIDs) in updatedFrom, NOT label objects
@@ -364,6 +376,7 @@ export class EnforcementEngine {
     logger.info('Checking protected labels', {
       issueId: current.id,
       currentLabels: currentLabels.map((l: IssueLabel) => l.name),
+      teamId: current.teamId ?? (current as any).team?.id,
       previousLabelIds: previous?.labelIds || [],
       hasProtectedNow,
       hadProtectedBefore,
@@ -418,7 +431,8 @@ export class EnforcementEngine {
           slaType: current.slaType,
           slaStartedAt: current.slaStartedAt,
           slaBreachesAt: current.slaBreachesAt,
-          priority: current.priority
+          priority: current.priority,
+          createdAt: current.createdAt
         });
       }
       return { enforced: false, reason: 'No relevant changes' };
@@ -492,116 +506,159 @@ export class EnforcementEngine {
           slaStartedAt: current.slaStartedAt,
           slaBreachesAt: current.slaBreachesAt,
           priority: current.priority,
+          createdAt: current.createdAt,
           // Authorized user explicitly changed slaBreachesAt — update the immutable baseline
           // so future restorations target the new deadline, not the old one
           updateOriginalSlaBreachesAt: slaBreachesAtWasChanged
         });
 
         // After an authorized priority change, Linear's workflow will recalculate the SLA
-        // (resetting slaStartedAt to "now"). The resulting webhook comes from a different
-        // webhook subscription (non-OAuth) and fails signature verification, so we can't
-        // rely on it. Instead, fetch the live issue after a short delay and apply the
-        // createdAt correction proactively.
+        // (resetting slaStartedAt to "now"). We wait briefly for the workflow to settle,
+        // then overwrite with the correct createdAt-anchored values.
+        //
+        // Fast path (rule match): all inputs come from the webhook — no live fetch needed.
+        //   Wait: 1000ms (enough for Linear's workflow; ~200-500ms typical).
+        //
+        // Slow path (no rule match): need to fetch live issue for duration fallback.
+        //   Wait: 2000ms to ensure the workflow has fully settled before we read + overwrite.
         const hasPriorityChange = changes.some(c => c.field === 'priority');
         if (hasPriorityChange && this.config.protectedFields.slaCreatedAtBaseline) {
           const issueId = current.id;
-          const cachedCreatedAt = this.slaCache.get(issueId)?.createdAt;
+          const cachedEntry = this.slaCache.get(issueId);
+          const effectiveCreatedAt = cachedEntry?.createdAt ?? current.createdAt ?? null;
+          const currentSlaType = current.slaType;
 
-          if (cachedCreatedAt) {
-            setTimeout(async () => {
-              try {
-                const liveIssue = await this.linearClient.getIssue(issueId);
+          // Pre-compute a rule match now so we know which path to take.
+          // All inputs (priority, labels, teamId) are available from the webhook payload.
+          const immediateRuleBreachesAt = effectiveCreatedAt && currentSlaType
+            ? this.resolveBreachFromRules(
+                effectiveCreatedAt,
+                current.priority ?? 0,
+                current.labels ?? [],
+                current.teamId ?? undefined
+              )
+            : null;
 
-                if (!liveIssue.slaType) {
-                  logger.debug('slaCreatedAtBaseline: live issue has no SLA after priority change, skipping correction', { issueId });
-                  return;
-                }
+          const delayMs = immediateRuleBreachesAt ? 1000 : 2000;
 
-                // Compute the correct slaBreachesAt = createdAt + authoritative window.
-                //
-                // Source priority:
-                //   1. SLA rule match (resolveBreachFromRules) — always authoritative
-                //   2. Cached duration (pre-workflow snapshot from webhook) — safe fallback when
-                //      slaStartedAt drifted: the cache holds values before Linear's workflow ran,
-                //      so the duration is from the previously-correct state, not from a potentially
-                //      stale workflow for the wrong priority level
-                //   3. Bail — no rule and no drift means nothing reliable to act on
-                //
-                // We deliberately do NOT use liveIssue duration (slaBreachesAt - slaStartedAt)
-                // because Linear's workflow can fire for the wrong priority window during rapid
-                // priority changes, producing durations that corrupt slaBreachesAt.
-                const cachedEntry = this.slaCache.get(issueId);
-                const hasDrift = liveIssue.slaStartedAt !== cachedCreatedAt;
-
-                const ruleBreachesAt = this.resolveBreachFromRules(
-                  cachedCreatedAt,
-                  liveIssue.priority ?? 0,
-                  liveIssue.labels ?? [],
-                  (liveIssue as any).teamId
-                );
-
-                let correctBreachesAt: Date | null = null;
-                let source = '';
-
-                if (ruleBreachesAt) {
-                  // Rule match — authoritative for any priority, drift or not
-                  correctBreachesAt = ruleBreachesAt;
-                  source = 'slaRule';
-                } else if (hasDrift && cachedEntry?.slaBreachesAt && cachedEntry?.slaStartedAt) {
-                  // slaStartedAt drifted but no rule — use cached duration to re-anchor to createdAt.
-                  // The cache was written from the webhook payload (before Linear's workflow ran),
-                  // so its duration reflects the last known-good state, not a stale workflow result.
-                  const durationMs = new Date(cachedEntry.slaBreachesAt).getTime() -
-                                     new Date(cachedEntry.slaStartedAt).getTime();
-                  correctBreachesAt = new Date(new Date(cachedCreatedAt).getTime() + durationMs);
-                  source = 'cachedDuration';
-                } else {
-                  // No rule and no drift — slaStartedAt is already anchored to createdAt.
-                  // Without a rule we have no authoritative window, so leave slaBreachesAt alone.
-                  logger.debug('slaCreatedAtBaseline: no drift and no SLA rule — slaBreachesAt unchanged', { issueId });
-                  return;
-                }
-
+          setTimeout(async () => {
+            try {
+              // ── Fast path: rule match, all data from webhook ──────────────────
+              if (immediateRuleBreachesAt && effectiveCreatedAt && currentSlaType) {
                 const alreadyCorrect =
-                  liveIssue.slaStartedAt === cachedCreatedAt &&
-                  liveIssue.slaBreachesAt === correctBreachesAt.toISOString();
+                  current.slaStartedAt === effectiveCreatedAt &&
+                  current.slaBreachesAt === immediateRuleBreachesAt.toISOString();
 
                 if (alreadyCorrect) {
-                  logger.debug('slaCreatedAtBaseline: slaStartedAt and slaBreachesAt already correct after priority change', { issueId });
+                  logger.debug('slaCreatedAtBaseline: SLA already correct after priority change', { issueId });
                   return;
                 }
 
                 logger.info('slaCreatedAtBaseline: applying correct SLA after authorized priority change', {
                   issueId,
-                  createdAt: cachedCreatedAt,
-                  priority: liveIssue.priority,
-                  hasDrift,
-                  currentSlaStartedAt: liveIssue.slaStartedAt,
-                  currentSlaBreachesAt: liveIssue.slaBreachesAt,
-                  correctSlaBreachesAt: correctBreachesAt,
-                  source
+                  createdAt: effectiveCreatedAt,
+                  priority: current.priority,
+                  correctSlaBreachesAt: immediateRuleBreachesAt,
+                  source: 'slaRule (no live fetch)'
                 });
 
                 await this.linearClient.updateIssue(issueId, {
-                  slaType: liveIssue.slaType,
-                  slaStartedAt: new Date(cachedCreatedAt),
-                  slaBreachesAt: correctBreachesAt
+                  slaType: currentSlaType,
+                  slaStartedAt: new Date(effectiveCreatedAt),
+                  slaBreachesAt: immediateRuleBreachesAt
                 });
 
                 this.updateCache(issueId, {
-                  slaType: liveIssue.slaType,
-                  slaStartedAt: cachedCreatedAt,
-                  slaBreachesAt: correctBreachesAt.toISOString(),
+                  slaType: currentSlaType,
+                  slaStartedAt: effectiveCreatedAt,
+                  slaBreachesAt: immediateRuleBreachesAt.toISOString(),
+                  createdAt: effectiveCreatedAt,
                   updateOriginalSlaBreachesAt: true
                 });
-              } catch (error) {
-                logger.error('slaCreatedAtBaseline: failed to correct drift after authorized priority change', {
-                  issueId,
-                  error: (error as Error).message
+                return;
+              }
+
+              // ── Slow path: no rule match — fetch live issue for duration fallback ──
+              const liveIssue = await this.linearClient.getIssue(issueId);
+
+              if (!liveIssue.slaType) {
+                logger.debug('slaCreatedAtBaseline: live issue has no SLA after priority change, skipping correction', { issueId });
+                return;
+              }
+
+              // Use cached createdAt if available; fall back to what the live issue returns.
+              const freshCachedEntry = this.slaCache.get(issueId);
+              const resolvedCreatedAt = freshCachedEntry?.createdAt ?? liveIssue.createdAt ?? null;
+
+              if (!resolvedCreatedAt) {
+                logger.warn('slaCreatedAtBaseline: no createdAt available for issue — skipping correction', { issueId });
+                return;
+              }
+
+              if (!freshCachedEntry?.createdAt) {
+                this.updateCache(issueId, {
+                  slaType: liveIssue.slaType,
+                  slaStartedAt: liveIssue.slaStartedAt,
+                  slaBreachesAt: liveIssue.slaBreachesAt,
+                  priority: liveIssue.priority,
+                  createdAt: resolvedCreatedAt
                 });
               }
-            }, 2500);
-          }
+
+              const hasDrift = liveIssue.slaStartedAt !== resolvedCreatedAt;
+
+              let correctBreachesAt: Date | null = null;
+              let source = '';
+
+              if (hasDrift && freshCachedEntry?.slaBreachesAt && freshCachedEntry?.slaStartedAt) {
+                const durationMs = new Date(freshCachedEntry.slaBreachesAt).getTime() -
+                                   new Date(freshCachedEntry.slaStartedAt).getTime();
+                correctBreachesAt = new Date(new Date(resolvedCreatedAt).getTime() + durationMs);
+                source = 'cachedDuration';
+              } else {
+                logger.debug('slaCreatedAtBaseline: no drift and no SLA rule — slaBreachesAt unchanged', { issueId });
+                return;
+              }
+
+              const alreadyCorrect =
+                liveIssue.slaStartedAt === resolvedCreatedAt &&
+                liveIssue.slaBreachesAt === correctBreachesAt.toISOString();
+
+              if (alreadyCorrect) {
+                logger.debug('slaCreatedAtBaseline: slaStartedAt and slaBreachesAt already correct after priority change', { issueId });
+                return;
+              }
+
+              logger.info('slaCreatedAtBaseline: applying correct SLA after authorized priority change', {
+                issueId,
+                createdAt: resolvedCreatedAt,
+                priority: liveIssue.priority,
+                hasDrift,
+                currentSlaStartedAt: liveIssue.slaStartedAt,
+                currentSlaBreachesAt: liveIssue.slaBreachesAt,
+                correctSlaBreachesAt: correctBreachesAt,
+                source
+              });
+
+              await this.linearClient.updateIssue(issueId, {
+                slaType: liveIssue.slaType,
+                slaStartedAt: new Date(resolvedCreatedAt),
+                slaBreachesAt: correctBreachesAt
+              });
+
+              this.updateCache(issueId, {
+                slaType: liveIssue.slaType,
+                slaStartedAt: resolvedCreatedAt,
+                slaBreachesAt: correctBreachesAt.toISOString(),
+                updateOriginalSlaBreachesAt: true
+              });
+            } catch (error) {
+              logger.error('slaCreatedAtBaseline: failed to correct drift after authorized priority change', {
+                issueId,
+                error: (error as Error).message
+              });
+            }
+          }, delayMs);
         }
       }
 
@@ -766,6 +823,12 @@ export class EnforcementEngine {
     slaStartedAt?: string | null;
     slaBreachesAt?: string | null;
     priority?: number;
+    /**
+     * createdAt is the immutable baseline — only written on first cache entry.
+     * Pass current.createdAt from the webhook so issues not seeded at startup
+     * still get their baseline set on the first webhook we see them in.
+     */
+    createdAt?: string | null;
     /** Set to true only for authorized slaBreachesAt changes — updates the immutable baseline */
     updateOriginalSlaBreachesAt?: boolean;
   }): void {
@@ -781,7 +844,7 @@ export class EnforcementEngine {
         ? (values.slaBreachesAt ?? null)
         : (existing?.originalSlaBreachesAt ?? values.slaBreachesAt ?? null),
       priority: values.priority,
-      createdAt: existing?.createdAt ?? null,
+      createdAt: existing?.createdAt ?? values.createdAt ?? null,
       cachedAt: new Date()
     });
     
@@ -828,11 +891,66 @@ export class EnforcementEngine {
   }
 
   /**
-   * Compute slaBreachesAt = createdAt + rule.hours for the best-matching SLA rule.
-   * Returns null if no rule applies (caller should fall back to duration-based calculation).
+   * Check if an issue matches any active SLA configuration rule.
+   * Used to extend protection scope beyond protectedLabels to any issue
+   * that Linear's SLA rules apply to.
+   */
+  private hasMatchingSlaRule(issue: IssueData): boolean {
+    if (this.slaConfigRules.length === 0) return false;
+
+    // Linear webhooks may send teamId as a flat field OR nested as team.id
+    const teamId = issue.teamId ?? (issue as any).team?.id ?? undefined;
+    const priority = issue.priority ?? 0;
+    const labels = issue.labels ?? [];
+
+    const matched = this.slaConfigRules.some(rule =>
+      this.matchesSlaConditions(rule.conditions, priority, labels, teamId)
+    );
+
+    if (!matched) {
+      logger.info('hasMatchingSlaRule: no rule matched', {
+        issueId: issue.id,
+        teamId,
+        priority,
+        labelNames: labels.map(l => l.name),
+        ruleCount: this.slaConfigRules.length
+      });
+    }
+
+    return matched;
+  }
+
+  /**
+   * Extract all label names referenced in slaConfigRules conditions.
+   * Used by cacheProtectedIssues to seed the cache for SLA-rule-matched issues.
+   */
+  private extractSlaRuleLabels(): string[] {
+    const names = new Set<string>();
+    for (const rule of this.slaConfigRules) {
+      for (const condition of rule.conditions) {
+        for (const clause of condition.issueFilter.and) {
+          if ('labels' in clause) {
+            for (const andItem of clause.labels.and) {
+              for (const orBranch of andItem.or) {
+                if ('name' in orBranch) names.add(orBranch.name.eq);
+                else names.add((orBranch as any).parent.name.eq);
+              }
+            }
+          }
+        }
+      }
+    }
+    return Array.from(names);
+  }
+
+  /**
+   * Compute slaBreachesAt = createdAt + rule duration for the best-matching rule.
    *
-   * Matching: all label constraints must be satisfied AND teamId must match when provided.
-   * Most specific rule (most conditions) wins.
+   * Checks the API-fetched slaConfigRules first (preferred — always in sync with
+   * Linear's UI). Falls back to config.slaRules when the API cache is empty
+   * (e.g. startup failure or team not in allowlist).
+   *
+   * Returns null when no rule matches — caller falls back to duration-based logic.
    */
   private resolveBreachFromRules(
     createdAt: string,
@@ -840,6 +958,39 @@ export class EnforcementEngine {
     labels: IssueLabel[],
     teamId?: string
   ): Date | null {
+    // ── API rules (preferred) ─────────────────────────────────────────────────
+    if (this.slaConfigRules.length > 0) {
+      let bestRule: SlaConfigurationRule | null = null;
+      let bestSpecificity = -1;
+
+      for (const rule of this.slaConfigRules) {
+        if (!this.matchesSlaConditions(rule.conditions, priority, labels, teamId)) continue;
+
+        const specificity = this.computeRuleSpecificity(rule.conditions);
+        if (specificity > bestSpecificity) {
+          bestRule = rule;
+          bestSpecificity = specificity;
+        }
+      }
+
+      if (bestRule) {
+        logger.debug('resolveBreachFromRules: matched API SLA configuration', {
+          ruleId: bestRule.id,
+          ruleName: bestRule.name,
+          slaMs: bestRule.sla,
+          slaHours: bestRule.sla / 3_600_000,
+          priority,
+          createdAt
+        });
+        return new Date(new Date(createdAt).getTime() + bestRule.sla);
+      }
+
+      logger.debug('resolveBreachFromRules: no API rule matched, checking config fallback', {
+        priority, teamId, labelCount: labels.length
+      });
+    }
+
+    // ── Config fallback ───────────────────────────────────────────────────────
     if (!this.config.slaRules || this.config.slaRules.length === 0) return null;
 
     const priorityNameMap: Record<number, string> = {
@@ -852,17 +1003,9 @@ export class EnforcementEngine {
     let bestSpecificity = -1;
 
     for (const rule of this.config.slaRules) {
-      // Team constraint: skip if rule requires a specific team and we can't verify it
-      if (rule.teamId) {
-        if (!teamId || rule.teamId !== teamId) continue;
-      }
+      if (rule.teamId && (!teamId || rule.teamId !== teamId)) continue;
+      if (rule.labels?.length && !rule.labels.every(l => labelNames.includes(l))) continue;
 
-      // Label constraint: all required labels must be present on the issue
-      if (rule.labels && rule.labels.length > 0) {
-        if (!rule.labels.every(l => labelNames.includes(l))) continue;
-      }
-
-      // Most specific match wins (most conditions = highest specificity)
       const specificity = (rule.teamId ? 1 : 0) + (rule.labels?.length ?? 0);
       if (specificity > bestSpecificity) {
         bestRule = rule;
@@ -877,15 +1020,62 @@ export class EnforcementEngine {
     );
     if (!window) return null;
 
-    logger.debug('resolveBreachFromRules: matched rule', {
-      rule: bestRule.name,
-      priority,
-      priorityName,
-      hours: window.hours,
-      createdAt
+    logger.debug('resolveBreachFromRules: matched config SLA rule (fallback)', {
+      rule: bestRule.name, priority, priorityName, hours: window.hours, createdAt
     });
 
-    return new Date(new Date(createdAt).getTime() + window.hours * 3600 * 1000);
+    return new Date(new Date(createdAt).getTime() + window.hours * 3_600_000);
+  }
+
+  /**
+   * Check whether an issue matches a slaConfiguration's conditions.
+   * conditions[] is OR — any one matching is sufficient.
+   * issueFilter.and[] is AND — all clauses must match.
+   */
+  private matchesSlaConditions(
+    conditions: SlaConfigurationRule['conditions'],
+    priority: number,
+    labels: IssueLabel[],
+    teamId: string | undefined
+  ): boolean {
+    return conditions.some(condition =>
+      condition.issueFilter.and.every(clause => {
+        if ('team' in clause) {
+          if (!teamId) return false;
+          // Direct match — issue's team is explicitly listed in the rule
+          if (clause.team.id.in.includes(teamId)) return true;
+          // Ancestor match — issue's team is a descendant of a rule's team
+          // e.g. BAC (child of ENG) matches a rule scoped to ENG
+          const ancestors = this.teamAncestorMap.get(teamId);
+          return ancestors ? clause.team.id.in.some(ruleTeamId => ancestors.has(ruleTeamId)) : false;
+        }
+        if ('priority' in clause) {
+          return clause.priority.in.includes(priority);
+        }
+        if ('labels' in clause) {
+          return clause.labels.and.every(andItem =>
+            andItem.or.some(orBranch => {
+              if ('name' in orBranch) {
+                return labels.some(l => l.name === orBranch.name.eq);
+              }
+              // parent branch — matches any label whose parent has the given name
+              return labels.some(l => l.parent?.name === (orBranch as any).parent.name.eq);
+            })
+          );
+        }
+        return true; // unknown clause — don't fail on it
+      })
+    );
+  }
+
+  /**
+   * Specificity = number of non-team AND clauses.
+   * More conditions → more specific → wins over a less-specific rule.
+   */
+  private computeRuleSpecificity(conditions: SlaConfigurationRule['conditions']): number {
+    const first = conditions[0];
+    if (!first) return 0;
+    return first.issueFilter.and.filter(c => !('team' in c)).length;
   }
 
   /**
