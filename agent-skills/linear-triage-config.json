@@ -1,0 +1,11 @@
+{
+  "label": "Claude Code",
+  "branchPrefix": "claude",
+  "repo": "/Users/shannon/Claude/linear-solutions",
+  "testCommand": "npm test",
+  "statusMap": {
+    "inProgress": "In Progress",
+    "inReview": "In Review"
+  },
+  "maxConcurrentIssues": 3
+}
