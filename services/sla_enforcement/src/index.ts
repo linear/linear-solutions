@@ -52,7 +52,9 @@ async function main() {
     // Hand the team member cache to the enforcement engine so getActorPermissions
     // can resolve linearTeamId group membership without any runtime API calls.
     const teamMemberCache = validator.getTeamMemberCache();
-    const enforcementEngine = new EnforcementEngine(config, linearClient, teamMemberCache);
+    const slaConfigRules = validator.getSlaConfigRules();
+    const teamAncestorMap = validator.getTeamAncestorMap();
+    const enforcementEngine = new EnforcementEngine(config, linearClient, teamMemberCache, slaConfigRules, teamAncestorMap);
 
     // Start background refresh of team member cache (every 4 hours)
     validator.startTeamRefresh();

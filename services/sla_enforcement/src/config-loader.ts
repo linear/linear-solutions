@@ -70,8 +70,6 @@ function validateConfig(config: Config): void {
   // Protected labels
   if (!config.protectedLabels || !Array.isArray(config.protectedLabels)) {
     errors.push('protectedLabels must be an array');
-  } else if (config.protectedLabels.length === 0) {
-    errors.push('protectedLabels must contain at least one label name');
   }
 
   // Protected fields

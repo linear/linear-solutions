@@ -2,7 +2,7 @@
  * Linear GraphQL client - uses raw GraphQL for all operations
  */
 
-import { LinearViewer, LinearLabel, LinearUser, IssueData, IssueLabel } from './types';
+import { LinearViewer, LinearLabel, LinearUser, LinearTeam, IssueData, IssueLabel, SlaConfigurationRule } from './types';
 import logger from './utils/logger';
 import { withRetry } from './utils/error-handler';
 
@@ -94,6 +94,7 @@ export class LinearClient {
               slaBreachesAt
               createdAt
               updatedAt
+              team { id }
               labels {
                 nodes {
                   id
@@ -129,7 +130,8 @@ export class LinearClient {
           slaHighRiskAt: issue.slaHighRiskAt || null,
           slaBreachesAt: issue.slaBreachesAt || null,
           createdAt: issue.createdAt,
-          updatedAt: issue.updatedAt
+          updatedAt: issue.updatedAt,
+          teamId: issue.team?.id || null,
         };
       },
       { operation: `Get issue ${issueId}` }
@@ -498,6 +500,7 @@ export class LinearClient {
                 slaHighRiskAt
                 slaBreachesAt
                 createdAt
+                team { id }
                 labels {
                   nodes {
                     id
@@ -522,6 +525,7 @@ export class LinearClient {
           slaHighRiskAt: issue.slaHighRiskAt || null,
           slaBreachesAt: issue.slaBreachesAt || null,
           createdAt: issue.createdAt || null,
+          teamId: issue.team?.id || null,
           labels: issue.labels?.nodes?.map((l: any) => ({
             id: l.id,
             name: l.name
@@ -621,6 +625,64 @@ export class LinearClient {
         }
       },
       { operation: `Get team members for ${teamId}` }
+    );
+  }
+
+  /**
+   * Fetch SLA configurations for a team.
+   * Accepts a team key (e.g. "ADM") or UUID — the API handles both.
+   */
+  async getSlaConfigurations(teamKeyOrUuid: string): Promise<SlaConfigurationRule[]> {
+    return withRetry(
+      async () => {
+        const query = `
+          query($teamId: String!) {
+            slaConfigurations(teamId: $teamId) {
+              id
+              name
+              sla
+              slaType
+              removesSla
+              conditions
+            }
+          }
+        `;
+        const data = await this.graphql(query, { teamId: teamKeyOrUuid });
+        return data.slaConfigurations ?? [];
+      },
+      { operation: `Get SLA configurations for team ${teamKeyOrUuid}` }
+    );
+  }
+
+  /**
+   * Get all teams in the workspace with their parent relationships.
+   * Used to build the team ancestor map so child-team issues are matched
+   * against parent-team SLA configurations without hardcoding team IDs.
+   */
+  async getAllTeams(): Promise<LinearTeam[]> {
+    return withRetry(
+      async () => {
+        const query = `
+          query {
+            teams {
+              nodes {
+                id
+                key
+                parent {
+                  id
+                }
+              }
+            }
+          }
+        `;
+        const data = await this.graphql(query);
+        return (data.teams?.nodes ?? []).map((t: any) => ({
+          id: t.id,
+          key: t.key,
+          parent: t.parent ? { id: t.parent.id } : null
+        }));
+      },
+      { operation: 'Get all teams' }
     );
   }
 
