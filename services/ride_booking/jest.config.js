@@ -13,6 +13,8 @@ module.exports = {
         tsconfig: {
           jsx: "react-jsx",
           esModuleInterop: true,
+          isolatedModules: true,
+          types: ["jest", "@testing-library/jest-dom"],
         },
       },
     ],
