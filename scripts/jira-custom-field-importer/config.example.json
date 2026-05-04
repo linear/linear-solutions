@@ -1,0 +1,28 @@
+{
+  "linear": {
+    "apiKey": "your-linear-api-key-here",
+    "teamId": "UUID or Friendly Key (ABC)",
+    "fetchAttachments": true,
+    "attachmentTimeout": 5000
+  },
+  "jira": {
+    "host": "your-company.atlassian.net",
+    "email": "your-email@company.com",
+    "apiToken": "your-jira-api-token",
+    "projectKey": "ABC"
+  },
+  "matching": {
+    "strategy": "attachment-url"
+  },
+  "customFields": [
+    {
+      "jiraFieldName": "customfield_10014",
+      "descriptionLabel": "Acceptance Criteria"
+    },
+    {
+      "jiraFieldName": "customfield_10020",
+      "descriptionLabel": "Business Value"
+    }
+  ],
+  "dryRun": true
+}
