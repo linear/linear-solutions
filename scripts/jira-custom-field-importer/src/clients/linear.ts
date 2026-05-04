@@ -51,7 +51,7 @@ export class LinearApiClient {
         const pageStartTime = Date.now();
 
         const result = await this.rateLimiter.executeWithRetry(
-          () => this.fetchIssuesPage(cursor, teamId),
+          () => this.fetchIssuesPageRaw(cursor, teamId),
           `Fetching Linear issues page ${pageCount}`
         );
 
@@ -97,7 +97,34 @@ export class LinearApiClient {
     }
   }
 
-  private async fetchIssuesPage(
+  // Fetch a single page of Linear issues — used by the streaming sync loop.
+  async fetchIssuePage(
+    cursor?: string,
+    teamId?: string
+  ): Promise<{ issues: LinearIssue[]; pageInfo: { hasNextPage: boolean; endCursor?: string } }> {
+    const raw = await this.rateLimiter.executeWithRetry(
+      () => this.fetchIssuesPageRaw(cursor, teamId),
+      'Fetching Linear issues page'
+    );
+    const issues: LinearIssue[] = raw.nodes.map(node => ({
+      id: node.id,
+      identifier: node.identifier,
+      title: node.title,
+      description: node.description || undefined,
+      url: node.url,
+      attachments: [],
+      team: { id: node.team?.id || '', name: node.team?.name || 'Unknown' },
+    }));
+    return { issues, pageInfo: raw.pageInfo };
+  }
+
+  // Expose attachment fetching so sync.ts can call it per-page
+  async fetchAttachmentsForPage(issues: LinearIssue[]): Promise<void> {
+    if (!this.fetchAttachments) return;
+    await this.fetchAttachmentsForIssues(issues);
+  }
+
+  private async fetchIssuesPageRaw(
     cursor?: string,
     teamId?: string
   ): Promise<{

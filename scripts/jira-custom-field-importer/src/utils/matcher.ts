@@ -1,12 +1,59 @@
 import { LinearIssue, JiraIssue, MatchResult, Config, Logger } from '../types';
 import { JiraApiClient } from '../clients/jira';
 
+const JIRA_KEY_PATTERNS = [
+  /\/browse\/([A-Z]+-\d+)/i,
+  /\/([A-Z]+-\d+)$/i,
+];
+
 export class IssueMatcher {
   constructor(
     private config: Config,
     private jiraClient: JiraApiClient,
     private logger: Logger
   ) {}
+
+  // Returns ordered candidate Jira keys for a Linear issue without making API calls.
+  // Used by the batch sync path to collect all keys before a single JQL fetch.
+  resolveCandidateKeys(linearIssue: LinearIssue): string[] {
+    const keys: string[] = [];
+    switch (this.config.matching.strategy) {
+      case 'identifier':
+        keys.push(linearIssue.identifier);
+        break;
+      case 'attachment-url':
+        for (const url of linearIssue.attachments || []) {
+          const key = this.extractKeyFromUrl(url);
+          if (key && !keys.includes(key)) keys.push(key);
+        }
+        break;
+      case 'hybrid':
+        keys.push(linearIssue.identifier);
+        for (const url of linearIssue.attachments || []) {
+          const key = this.extractKeyFromUrl(url);
+          if (key && !keys.includes(key)) keys.push(key);
+        }
+        break;
+    }
+    return keys;
+  }
+
+  // Find the best matching Jira issue from a pre-fetched map (batch path).
+  findMatchInBatch(linearIssue: LinearIssue, jiraMap: Map<string, JiraIssue>): JiraIssue | null {
+    for (const key of this.resolveCandidateKeys(linearIssue)) {
+      const issue = jiraMap.get(key);
+      if (issue) return issue;
+    }
+    return null;
+  }
+
+  private extractKeyFromUrl(url: string): string | null {
+    for (const pattern of JIRA_KEY_PATTERNS) {
+      const match = url.match(pattern);
+      if (match?.[1]) return match[1].toUpperCase();
+    }
+    return null;
+  }
 
   async findBestMatch(linearIssue: LinearIssue): Promise<MatchResult> {
     this.logger.debug(

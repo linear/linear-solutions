@@ -83,6 +83,73 @@ export class JiraApiClient {
     }
   }
 
+  // Batch fetch up to 100 Jira issues per API call using JQL IN clause.
+  // Returns a map of issueKey → JiraIssue for all keys that were found.
+  async getIssuesByKeys(issueKeys: string[]): Promise<Map<string, JiraIssue>> {
+    if (issueKeys.length === 0) return new Map();
+
+    const BATCH_SIZE = 100;
+    const resultMap = new Map<string, JiraIssue>();
+    const fieldNames = ['summary', ...this.customFields.map(f => f.jiraFieldName)];
+
+    for (let i = 0; i < issueKeys.length; i += BATCH_SIZE) {
+      const batch = issueKeys.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(issueKeys.length / BATCH_SIZE);
+
+      this.logger.debug(
+        `Batch fetching ${batch.length} Jira issues (batch ${batchNum}/${totalBatches})`
+      );
+
+      try {
+        const result: any = await this.rateLimiter.executeWithRetry(
+          () => this.client.issueSearch.searchForIssuesUsingJql({
+            jql: `issueKey IN (${batch.join(',')})`,
+            fields: fieldNames,
+            expand: 'names',
+            maxResults: batch.length,
+          }),
+          `Batch Jira fetch ${batchNum}/${totalBatches}`
+        );
+
+        // The names map is at the response level (not per-issue) when expand=names
+        const nameToKey: Record<string, string> = {};
+        if (result.names && typeof result.names === 'object') {
+          for (const [key, displayName] of Object.entries(result.names)) {
+            if (typeof displayName === 'string') {
+              nameToKey[displayName.toLowerCase()] = key;
+            }
+          }
+        }
+
+        for (const issue of result.issues || []) {
+          const customFieldValues: Record<string, string> = {};
+          for (const fieldConfig of this.customFields) {
+            const value = this.resolveFieldValue(issue, fieldConfig.jiraFieldName, nameToKey);
+            if (value !== null) {
+              customFieldValues[fieldConfig.descriptionLabel] = value;
+            }
+          }
+
+          resultMap.set(issue.key, {
+            id: issue.id || '',
+            key: issue.key || '',
+            summary: issue.fields?.summary || '',
+            url: `https://${this.host}/browse/${issue.key}`,
+            customFields: customFieldValues,
+          });
+        }
+
+        this.logger.debug(`Batch ${batchNum}: got ${result.issues?.length ?? 0}/${batch.length} results`);
+      } catch (error) {
+        this.logger.error(`Batch Jira fetch ${batchNum} failed: ${error}`);
+        // Don't abort — missing issues will just be unmatched
+      }
+    }
+
+    return resultMap;
+  }
+
   async getIssueByUrl(jiraUrl: string): Promise<JiraIssue | null> {
     const issueKey = this.extractKeyFromUrl(jiraUrl);
     if (!issueKey) {
