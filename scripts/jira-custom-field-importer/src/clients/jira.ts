@@ -12,7 +12,8 @@ export class JiraApiClient {
     private apiToken: string,
     private customFields: CustomFieldConfig[],
     private logger: Logger,
-    rateLimitConfig?: RateLimitConfig
+    rateLimitConfig?: RateLimitConfig,
+    private filterJql?: string
   ) {
     this.client = new Version3Client({
       host: `https://${this.host}`,
@@ -102,9 +103,18 @@ export class JiraApiClient {
       );
 
       try {
+        const baseJql = `issueKey IN (${batch.join(',')})`;
+        const jql = this.filterJql
+          ? `${baseJql} AND (${this.filterJql})`
+          : baseJql;
+
+        if (this.filterJql) {
+          this.logger.debug(`Applying Jira filter: ${this.filterJql}`);
+        }
+
         const result: any = await this.rateLimiter.executeWithRetry(
           () => this.client.issueSearch.searchForIssuesUsingJql({
-            jql: `issueKey IN (${batch.join(',')})`,
+            jql,
             fields: fieldNames,
             expand: 'names',
             maxResults: batch.length,
