@@ -149,6 +149,24 @@ export class LinearApiClient {
     };
   }
 
+  async hasImporterComment(issueId: string): Promise<boolean> {
+    try {
+      const issue = await this.rateLimiter.executeWithRetry(
+        () => this.client.issue(issueId),
+        `Fetching issue ${issueId} for comment check`
+      );
+      const comments = await this.rateLimiter.executeWithRetry(
+        () => issue.comments(),
+        `Fetching comments for issue ${issueId}`
+      );
+      return comments.nodes.some((c: any) =>
+        typeof c.body === 'string' && c.body.includes('🤖 Jira Custom Field Importer')
+      );
+    } catch {
+      return false;
+    }
+  }
+
   async updateIssueDescription(issueId: string, description: string): Promise<void> {
     this.logger.debug(`Updating Linear issue ${issueId} description`);
     try {
@@ -164,13 +182,16 @@ export class LinearApiClient {
   }
 
   async addComment(issueId: string, body: string): Promise<void> {
-    this.logger.debug(`Adding comment to Linear issue ${issueId}`);
+    this.logger.info(`💬 Posting activity comment on issue ${issueId}`);
     try {
-      await this.rateLimiter.executeWithRetry(
+      const payload = await this.rateLimiter.executeWithRetry(
         () => this.client.createComment({ issueId, body }),
         `Adding comment to issue ${issueId}`
       );
-      this.logger.debug(`Successfully added comment to issue ${issueId}`);
+      if (!payload.success) {
+        throw new Error(`createComment returned success=false`);
+      }
+      this.logger.info(`✓ Comment posted on issue ${issueId}`);
     } catch (error) {
       this.logger.error(`Failed to add comment to issue ${issueId}: ${error}`);
       throw error;

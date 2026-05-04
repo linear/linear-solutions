@@ -95,9 +95,9 @@ export class CustomFieldSync {
 
           result.matchedIssues++;
 
-          // Build the updated description by appending any missing custom field sections
+          // Upsert each custom field section: append if missing, replace if value changed
           let description = linearIssue.description || '';
-          let appended = false;
+          let changed = false;
 
           for (const fieldConfig of this.config.customFields) {
             const value = matchResult.jiraIssue.customFields[fieldConfig.descriptionLabel];
@@ -109,44 +109,49 @@ export class CustomFieldSync {
               continue;
             }
 
-            // Idempotency: skip if the section heading already exists
-            const heading = `**${fieldConfig.descriptionLabel}**`;
-            if (description.includes(heading)) {
-              this.logger.debug(
-                `"${fieldConfig.descriptionLabel}" section already present in "${linearIssue.title}", skipping`
+            const result = this.upsertSection(description, fieldConfig.descriptionLabel, value);
+            if (result.changed) {
+              description = result.description;
+              changed = true;
+              this.logger.info(
+                `  Updating "${fieldConfig.descriptionLabel}" in "${linearIssue.title}"`
               );
-              continue;
+            } else {
+              this.logger.debug(
+                `"${fieldConfig.descriptionLabel}" unchanged in "${linearIssue.title}", skipping`
+              );
             }
-
-            description += `\n\n${heading}\n${value}`;
-            appended = true;
-
-            this.logger.info(
-              `  Appending "${fieldConfig.descriptionLabel}" to "${linearIssue.title}"`
-            );
           }
 
-          if (appended) {
+          const importedLabels = this.config.customFields
+            .filter(f => matchResult.jiraIssue!.customFields[f.descriptionLabel])
+            .map(f => `**${f.descriptionLabel}**`)
+            .join(', ');
+
+          const comment =
+            `🤖 Jira Custom Field Importer synced ${importedLabels} from [${matchResult.jiraIssue!.key}](https://${this.config.jira.host}/browse/${matchResult.jiraIssue!.key}).`;
+
+          if (changed) {
             if (!this.config.dryRun) {
               await this.linearClient.updateIssueDescription(linearIssue.id, description);
-
-              const importedLabels = this.config.customFields
-                .filter(f => matchResult.jiraIssue!.customFields[f.descriptionLabel])
-                .map(f => `**${f.descriptionLabel}**`)
-                .join(', ');
-
-              const comment =
-                `🤖 Jira Custom Field Importer synced ${importedLabels} from [${matchResult.jiraIssue!.key}](https://${this.config.jira.host}/browse/${matchResult.jiraIssue!.key}).`;
-
               await this.linearClient.addComment(linearIssue.id, comment);
             } else {
               this.logger.info(
-                `[DRY RUN] Would update description of "${linearIssue.title}"`
+                `[DRY RUN] Would update description and post comment on "${linearIssue.title}"`
               );
             }
             result.updatedIssues++;
           } else {
-            this.logger.debug(`No description changes needed for "${linearIssue.title}"`);
+            // Description already up-to-date — check if the activity comment was missed
+            if (!this.config.dryRun && importedLabels) {
+              const alreadyCommented = await this.linearClient.hasImporterComment(linearIssue.id);
+              if (!alreadyCommented) {
+                this.logger.info(`  Posting missing activity comment on "${linearIssue.title}"`);
+                await this.linearClient.addComment(linearIssue.id, comment);
+              } else {
+                this.logger.debug(`No changes needed for "${linearIssue.title}"`);
+              }
+            }
             result.skippedIssues++;
           }
         } catch (error) {
@@ -165,6 +170,38 @@ export class CustomFieldSync {
       this.logger.error(`Sync failed: ${error}`);
       throw error;
     }
+  }
+
+  // Upsert a labeled section in the description.
+  // - If the section is absent, appends it.
+  // - If the section exists with the same value, returns changed=false.
+  // - If the section exists with a different value, replaces it and returns changed=true.
+  private upsertSection(
+    description: string,
+    label: string,
+    newValue: string
+  ): { description: string; changed: boolean } {
+    const heading = `**${label}**`;
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Match the section from its heading to the next \n\n** heading or end of string
+    const sectionRegex = new RegExp(
+      `(\\n\\n\\*\\*${escapedLabel}\\*\\*\\n)([\\s\\S]*?)(?=\\n\\n\\*\\*|$)`
+    );
+
+    if (description.includes(heading)) {
+      const match = description.match(sectionRegex);
+      const currentValue = match ? match[2].trimEnd() : '';
+      if (currentValue === newValue.trimEnd()) {
+        return { description, changed: false };
+      }
+      // Replace existing value with the latest from Jira
+      const updated = description.replace(sectionRegex, `$1${newValue}`);
+      return { description: updated, changed: true };
+    }
+
+    // Section not present — append it
+    return { description: `${description}\n\n${heading}\n${newValue}`, changed: true };
   }
 
   private validateConfiguration(): void {
