@@ -4,13 +4,28 @@ Imports Jira custom field values (e.g. Acceptance Criteria) into the description
 
 ## How it works
 
-1. Fetches all Linear issues from a configured team
-2. For each issue, finds the matching Jira issue via the Jira URL stored on the Linear issue (from Linear's native Jira sync)
-3. Reads the configured custom fields from the Jira issue
-4. Appends any missing fields to the Linear issue description as labeled sections
-5. Posts a comment on the Linear issue confirming what was imported
+1. Streams Linear issues one page at a time (100 per page)
+2. For each page, resolves Jira issue keys and fetches all of them in a single batch API call
+3. Upserts each configured custom field as a labeled section in the Linear description — appends if missing, replaces in-place if the Jira value has changed, skips if unchanged
+4. Posts an activity comment on the Linear issue confirming what was imported
+5. Saves progress to a checkpoint file after each page — if the run is interrupted, re-running resumes from where it stopped
 
-Re-runs are safe — a field section is only appended if the heading doesn't already exist in the description.
+Re-runs are safe and always reflect the latest Jira content. If a field value changes in Jira, the next sync updates it in Linear automatically.
+
+## Performance
+
+The tool is designed to handle large workspaces efficiently:
+
+| Workspace size | Estimated runtime |
+|---|---|
+| ~500 issues | 2–3 min |
+| ~5,000 issues | 15–20 min |
+| ~30,000 issues | 20–30 min |
+
+**Key optimizations:**
+- **Batch Jira lookups** — one JQL `IN()` API call per 100 issues instead of one call per issue (~100x fewer Jira API requests)
+- **Streaming** — issues are fetched and processed one page at a time, so memory usage stays flat regardless of workspace size
+- **Checkpoint/resume** — progress is saved after every page; crashes or interruptions don't require starting over
 
 ## Prerequisites
 
@@ -151,6 +166,26 @@ You'll be asked to confirm before any changes are made. After each updated issue
 npm run dev -- init -o config.json
 ```
 
+## Checkpoint and resume
+
+For large workspaces, the sync saves a `sync-checkpoint.json` file in the working directory after every page of issues. If the run is interrupted (network error, crash, manual stop), simply re-run the same command:
+
+```bash
+npm run dev -- sync
+```
+
+The tool detects the checkpoint and asks:
+
+```
+⚠️  Found checkpoint from 2026-05-04T10:00:00Z with 12400 issues already processed.
+Resume from checkpoint? (yes/no — "no" starts fresh):
+```
+
+- **yes** — picks up from the exact page it stopped at, skipping already-processed issues
+- **no** — deletes the checkpoint and starts over from the beginning
+
+The checkpoint file is automatically deleted when a run completes successfully.
+
 ## Environment variables
 
 All config values can be overridden with environment variables. These take precedence over `config.json`.
@@ -179,6 +214,10 @@ All config values can be overridden with environment variables. These take prece
 - The tool also accepts the field's display name as `jiraFieldName` — make sure the spelling matches exactly.
 - Confirm the field is populated on the specific Jira issues being processed.
 
+**Sync interrupted — how to resume**
+- If `sync-checkpoint.json` exists in the working directory, re-running `npm run dev -- sync` will detect it and offer to resume.
+- If the checkpoint file is missing or corrupted, the tool starts fresh automatically.
+
 **Rate limiting**
 - The tool includes automatic retry with exponential backoff. Add a `rateLimiting` block to `config.json` to tune the behaviour:
 
@@ -190,3 +229,5 @@ All config values can be overridden with environment variables. These take prece
   "delayBetweenRequestsMs": 200
 }
 ```
+
+For very large workspaces on Jira Cloud (which enforces ~10 req/s per API token), setting `delayBetweenRequestsMs` to `150`–`200` helps avoid sustained rate limit errors.
