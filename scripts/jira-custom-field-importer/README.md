@@ -47,6 +47,12 @@ curl -u your-email@company.com:YOUR_JIRA_API_TOKEN \
 
 Replace `PROJ-1` with any issue that has the field populated. The `names` object in the response maps field keys to display names.
 
+Alternatively, if your Atlassian workspace has **Rovo** enabled, you can ask it directly:
+
+> _"What is the Jira custom field key for Acceptance Criteria in our workspace?"_
+
+Rovo has access to your Jira schema and will return the field key (e.g. `customfield_10316`) without needing API access.
+
 ### 4. Create your config
 
 ```bash
