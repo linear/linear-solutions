@@ -163,6 +163,20 @@ export class LinearApiClient {
     }
   }
 
+  async addComment(issueId: string, body: string): Promise<void> {
+    this.logger.debug(`Adding comment to Linear issue ${issueId}`);
+    try {
+      await this.rateLimiter.executeWithRetry(
+        () => this.client.createComment({ issueId, body }),
+        `Adding comment to issue ${issueId}`
+      );
+      this.logger.debug(`Successfully added comment to issue ${issueId}`);
+    } catch (error) {
+      this.logger.error(`Failed to add comment to issue ${issueId}: ${error}`);
+      throw error;
+    }
+  }
+
   private async fetchAttachmentsForIssues(issues: LinearIssue[]): Promise<void> {
     const batchSize = 10;
     let processed = 0;

@@ -129,6 +129,16 @@ export class CustomFieldSync {
           if (appended) {
             if (!this.config.dryRun) {
               await this.linearClient.updateIssueDescription(linearIssue.id, description);
+
+              const importedLabels = this.config.customFields
+                .filter(f => matchResult.jiraIssue!.customFields[f.descriptionLabel])
+                .map(f => `**${f.descriptionLabel}**`)
+                .join(', ');
+
+              const comment =
+                `🤖 Jira Custom Field Importer synced ${importedLabels} from [${matchResult.jiraIssue!.key}](https://${this.config.jira.host}/browse/${matchResult.jiraIssue!.key}).`;
+
+              await this.linearClient.addComment(linearIssue.id, comment);
             } else {
               this.logger.info(
                 `[DRY RUN] Would update description of "${linearIssue.title}"`
