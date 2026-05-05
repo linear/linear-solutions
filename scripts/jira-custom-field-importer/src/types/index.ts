@@ -9,12 +9,16 @@ export interface Config {
     teamId?: string;
     fetchAttachments?: boolean;
     attachmentTimeout?: number;
+    projectName?: string;   // Only process issues belonging to this Linear project
+    labels?: string[];       // Only process issues that have ALL of these labels
+    states?: string[];       // Only process issues in these workflow states
   };
   jira: {
     host: string;
     email: string;
     apiToken: string;
     projectKey?: string;
+    filterJql?: string;      // Additional JQL ANDed into every Jira batch query
   };
   matching: {
     strategy: 'identifier' | 'attachment-url' | 'hybrid';

@@ -9,6 +9,8 @@ export class LinearApiClient {
   private attachmentTimeout: number = 5000;
   private rateLimiter: RateLimiter;
 
+  private linearFilters: { projectName?: string; labels?: string[]; states?: string[] } = {};
+
   constructor(
     private apiKey: string,
     private logger: Logger,
@@ -17,6 +19,9 @@ export class LinearApiClient {
       fetchAttachments?: boolean;
       attachmentTimeout?: number;
       rateLimitConfig?: RateLimitConfig;
+      projectName?: string;
+      labels?: string[];
+      states?: string[];
     }
   ) {
     if (!this.apiKey || this.apiKey.trim() === '') {
@@ -28,6 +33,11 @@ export class LinearApiClient {
     if (options) {
       this.fetchAttachments = options.fetchAttachments ?? true;
       this.attachmentTimeout = options.attachmentTimeout ?? 5000;
+      this.linearFilters = {
+        projectName: options.projectName,
+        labels: options.labels,
+        states: options.states,
+      };
     }
 
     this.rateLimiter = new RateLimiter(logger, options?.rateLimitConfig);
@@ -144,11 +154,27 @@ export class LinearApiClient {
       includeArchived: false,
     };
 
+    const filter: any = {};
+
     if (teamId) {
       const isUUID = teamId.length > 10 && teamId.includes('-');
-      queryOptions.filter = {
-        team: isUUID ? { id: { eq: teamId } } : { key: { eq: teamId } },
-      };
+      filter.team = isUUID ? { id: { eq: teamId } } : { key: { eq: teamId } };
+    }
+
+    if (this.linearFilters.projectName) {
+      filter.project = { name: { eq: this.linearFilters.projectName } };
+    }
+
+    if (this.linearFilters.labels?.length) {
+      filter.labels = { some: { name: { in: this.linearFilters.labels } } };
+    }
+
+    if (this.linearFilters.states?.length) {
+      filter.state = { name: { in: this.linearFilters.states } };
+    }
+
+    if (Object.keys(filter).length > 0) {
+      queryOptions.filter = filter;
     }
 
     const result = await this.client.issues(queryOptions);

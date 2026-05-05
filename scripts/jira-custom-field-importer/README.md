@@ -111,10 +111,14 @@ Edit `config.json`:
 | `linear.teamId` | No | Team key (e.g. `ENG`) or UUID — omit to process all teams |
 | `linear.fetchAttachments` | No | Whether to fetch issue attachment URLs (default: `true`) |
 | `linear.attachmentTimeout` | No | Timeout in ms for attachment fetching (default: `5000`) |
+| `linear.projectName` | No | Only process Linear issues in this project (exact name match) |
+| `linear.labels` | No | Only process issues with at least one of these labels (array of strings) |
+| `linear.states` | No | Only process issues in these workflow states (e.g. `["In Progress"]`) |
 | `jira.host` | Yes | Your Jira domain without `https://` (e.g. `company.atlassian.net`) |
 | `jira.email` | Yes | Email address associated with your Jira API token |
 | `jira.apiToken` | Yes | Your Jira API token |
 | `jira.projectKey` | No | Jira project key (e.g. `PROJ`) — used to validate the project exists |
+| `jira.filterJql` | No | Additional JQL filter applied to every Jira batch query (e.g. `status = "In Progress"`) |
 | `matching.strategy` | Yes | `attachment-url`, `identifier`, or `hybrid` (see below) |
 | `customFields` | Yes | Array of fields to import (see below) |
 | `dryRun` | No | If `true`, logs changes without writing to Linear (default: `false`) |
@@ -185,6 +189,67 @@ Resume from checkpoint? (yes/no — "no" starts fresh):
 - **no** — deletes the checkpoint and starts over from the beginning
 
 The checkpoint file is automatically deleted when a run completes successfully.
+
+## Scoping a batch import
+
+You can limit which issues get processed using filters on either side — Linear, Jira, or both at the same time. This is the recommended approach when running the importer on a subset of a large workspace.
+
+### Filter by Linear issue state
+
+Add `states` to the `linear` block to only process issues in specific workflow states:
+
+```json
+"linear": {
+  "apiKey": "lin_api_...",
+  "teamId": "ENG",
+  "fetchAttachments": true,
+  "states": ["In Progress"]
+}
+```
+
+Other examples: `["Todo", "In Progress"]`, `["In Review"]`. State names must match exactly as they appear in Linear.
+
+### Filter by Jira status (or any JQL)
+
+Add `filterJql` to the `jira` block to restrict which Jira issues are considered a valid match:
+
+```json
+"jira": {
+  "host": "your-company.atlassian.net",
+  "email": "you@company.com",
+  "apiToken": "your-jira-api-token",
+  "filterJql": "status = \"In Progress\""
+}
+```
+
+This filter is ANDed into every Jira batch query. Any Jira issue that doesn't satisfy it will not match, even if a Linear issue links to it. You can use any valid JQL expression:
+
+| Goal | `filterJql` value |
+|---|---|
+| Only in-progress Jira issues | `status = "In Progress"` |
+| A specific sprint | `sprint = "Sprint 12"` |
+| Recently updated | `updated >= -7d` |
+| Multiple statuses | `status in ("In Progress", "In Review")` |
+
+### Combining both filters
+
+Use both together for the most precise scope — only Linear issues in a given state that also have a matching Jira issue in a given status:
+
+```json
+"linear": {
+  "teamId": "ENG",
+  "fetchAttachments": true,
+  "states": ["In Progress"]
+},
+"jira": {
+  "host": "your-company.atlassian.net",
+  "email": "you@company.com",
+  "apiToken": "your-jira-api-token",
+  "filterJql": "status = \"In Progress\""
+}
+```
+
+With this config, a Linear issue is only updated if it is "In Progress" in Linear **and** its linked Jira issue is also "In Progress" in Jira. This is useful for keeping both systems in sync incrementally without processing the entire backlog.
 
 ## Environment variables
 
