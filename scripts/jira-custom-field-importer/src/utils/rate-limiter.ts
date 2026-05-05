@@ -127,7 +127,7 @@ export class RateLimiter {
   private shouldNotRetry(error: any): boolean {
     const msg = error.message?.toLowerCase() || '';
     const status = error.status || error.statusCode || error.response?.status;
-    if (status && [401, 403, 400, 422, 404].includes(status)) return true;
+    if (status && [400, 401, 403, 404, 410, 422].includes(status)) return true;
     const authErrors = ['unauthorized', 'authentication', 'invalid token', 'invalid api key', 'forbidden', 'access denied'];
     if (authErrors.some(p => msg.includes(p))) return true;
     if (error.errors) {
