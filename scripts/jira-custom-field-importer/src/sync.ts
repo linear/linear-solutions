@@ -31,6 +31,9 @@ export class CustomFieldSync {
         fetchAttachments: config.linear.fetchAttachments,
         attachmentTimeout: config.linear.attachmentTimeout,
         rateLimitConfig: config.rateLimiting,
+        projectName: config.linear.projectName,
+        labels: config.linear.labels,
+        states: config.linear.states,
       }
     );
 
@@ -40,7 +43,8 @@ export class CustomFieldSync {
       config.jira.apiToken,
       config.customFields,
       logger,
-      config.rateLimiting
+      config.rateLimiting,
+      config.jira.filterJql
     );
 
     this.matcher = new IssueMatcher(config, this.jiraClient, logger);
@@ -263,12 +267,21 @@ export class CustomFieldSync {
 
   private validateConfiguration(): void {
     this.logger.info('Validating configuration...');
+
     this.logger.info(`Configured custom fields (${this.config.customFields.length}):`);
     for (const field of this.config.customFields) {
       this.logger.info(
         `  - Jira field "${field.jiraFieldName}" → Linear description label "${field.descriptionLabel}"`
       );
     }
+
+    this.logger.info('Scope filters:');
+    this.logger.info(`  Linear team:    ${this.config.linear.teamId || '(all teams)'}`);
+    this.logger.info(`  Linear project: ${this.config.linear.projectName || '(all projects)'}`);
+    this.logger.info(`  Linear labels:  ${this.config.linear.labels?.join(', ') || '(any)'}`);
+    this.logger.info(`  Linear states:  ${this.config.linear.states?.join(', ') || '(any)'}`);
+    this.logger.info(`  Jira filter:    ${this.config.jira.filterJql || '(none)'}`);
+
     this.logger.info('Configuration validation passed');
   }
 

@@ -38,6 +38,7 @@ export class ConfigLoader {
         email: process.env.JIRA_EMAIL || '',
         apiToken: process.env.JIRA_API_TOKEN || '',
         projectKey: process.env.JIRA_PROJECT_KEY,
+        filterJql: process.env.JIRA_FILTER_JQL,
       },
     };
 
@@ -68,6 +69,7 @@ export class ConfigLoader {
         ...(envConfig.jira?.email?.trim() ? { email: envConfig.jira.email } : {}),
         ...(envConfig.jira?.apiToken?.trim() ? { apiToken: envConfig.jira.apiToken } : {}),
         ...(envConfig.jira?.projectKey ? { projectKey: envConfig.jira.projectKey } : {}),
+        ...(envConfig.jira?.filterJql ? { filterJql: envConfig.jira.filterJql } : {}),
       },
       dryRun: envConfig.dryRun !== undefined ? envConfig.dryRun : fileConfig.dryRun,
     };
@@ -128,12 +130,16 @@ export class ConfigLoader {
         teamId: "UUID or Friendly Key (ABC)",
         fetchAttachments: true,
         attachmentTimeout: 5000,
+        // projectName: "Q2 Migration",         // Optional: only issues in this Linear project
+        // labels: ["needs-import"],             // Optional: only issues with these labels
+        // states: ["In Progress", "Todo"],      // Optional: only issues in these states
       },
       jira: {
         host: "your-company.atlassian.net",
         email: "your-email@company.com",
         apiToken: "your-jira-api-token",
         projectKey: "ABC",
+        // filterJql: "sprint = 'Sprint 5'",    // Optional: additional JQL filter
       },
       matching: {
         strategy: "attachment-url",

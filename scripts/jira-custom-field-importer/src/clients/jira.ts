@@ -1,4 +1,5 @@
 const { Version3Client } = require('jira.js');
+import axios from 'axios';
 import { JiraIssue, CustomFieldConfig, Logger, RateLimitConfig } from '../types';
 import { RateLimiter } from '../utils/rate-limiter';
 
@@ -12,7 +13,8 @@ export class JiraApiClient {
     private apiToken: string,
     private customFields: CustomFieldConfig[],
     private logger: Logger,
-    rateLimitConfig?: RateLimitConfig
+    rateLimitConfig?: RateLimitConfig,
+    private filterJql?: string
   ) {
     this.client = new Version3Client({
       host: `https://${this.host}`,
@@ -102,12 +104,25 @@ export class JiraApiClient {
       );
 
       try {
+        const baseJql = `issueKey IN (${batch.join(',')})`;
+        const jql = this.filterJql
+          ? `${baseJql} AND (${this.filterJql})`
+          : baseJql;
+
+        this.logger.debug(`JQL: ${jql}`);
+
         const result: any = await this.rateLimiter.executeWithRetry(
-          () => this.client.issueSearch.searchForIssuesUsingJql({
-            jql: `issueKey IN (${batch.join(',')})`,
-            fields: fieldNames,
-            expand: 'names',
-            maxResults: batch.length,
+          () => axios.post(
+            `https://${this.host}/rest/api/3/search/jql`,
+            { jql, fields: fieldNames, maxResults: batch.length },
+            {
+              auth: { username: this.email, password: this.apiToken },
+              headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            }
+          ).then(r => r.data).catch((err: any) => {
+            const body = err.response?.data;
+            this.logger.debug(`Jira search error body: ${JSON.stringify(body)}`);
+            throw err;
           }),
           `Batch Jira fetch ${batchNum}/${totalBatches}`
         );
