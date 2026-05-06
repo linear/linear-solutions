@@ -267,6 +267,43 @@ All config values can be overridden with environment variables. These take prece
 | `JIRA_PROJECT_KEY` | `jira.projectKey` |
 | `DRY_RUN` | `dryRun` |
 
+## Running as a background agent (OAuth)
+
+By default, the importer authenticates with a personal API key, so all activity (issue description updates, comments) is attributed to your user account. If you want the sync to appear as an automated integration — attributing changes to an OAuth app rather than a person — use a Linear OAuth access token instead.
+
+This is the recommended approach when:
+- Running the importer on a schedule or as part of a CI/CD pipeline
+- You want a clean audit trail that distinguishes automated imports from manual edits
+- Multiple team members may trigger the sync and you want a single consistent actor
+
+### Getting an OAuth token
+
+1. Go to **Settings → API → OAuth applications** and create a new application (or use an existing one)
+2. Under the application, go to **Developer tokens** and generate a personal access token scoped to your workspace
+3. Copy the token — it starts with `lin_oauth_` (not `lin_api_`)
+
+Alternatively, if you're integrating this into a server-side agent flow, implement the standard OAuth 2.0 authorization code grant to obtain a user-delegated access token. The Linear OAuth docs cover this at https://developers.linear.app/docs/oauth/authentication.
+
+### Configuring the token
+
+Replace `linear.apiKey` in `config.json` with the OAuth token:
+
+```json
+"linear": {
+  "apiKey": "lin_oauth_...",
+  "teamId": "ENG",
+  "fetchAttachments": true
+}
+```
+
+Or set it via the environment variable — no config change needed:
+
+```bash
+LINEAR_API_KEY=lin_oauth_... npm run dev -- sync
+```
+
+The OAuth token is a drop-in replacement for the personal API key. All scoping, filtering, and checkpoint behaviour works identically.
+
 ## Troubleshooting
 
 **No issues are matching**
