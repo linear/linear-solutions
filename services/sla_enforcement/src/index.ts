@@ -217,7 +217,7 @@ async function main() {
     app.listen(PORT, () => {
       logger.info(`✓ Server listening on port ${PORT}`);
       logger.info('\n✅ Vulnerability Protection Agent is ready!');
-      logger.info(`\n📝 Expose this server with ngrok:\n   ngrok http ${PORT}\n`);
+      logger.info(`\n📝 Expose this server with a Cloudflare tunnel:\n   cloudflared tunnel --url http://localhost:${PORT}\n`);
     });
   } catch (error) {
     logger.error('Failed to start agent', {
