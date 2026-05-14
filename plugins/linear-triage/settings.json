@@ -11,6 +11,8 @@
       "mcp__claude_ai_Linear__list_teams",
       "mcp__claude_ai_Linear__get_user",
       "Bash",
+      "Task",
+      "Agent",
       "Read",
       "Edit",
       "Write",

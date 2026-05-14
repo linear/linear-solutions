@@ -89,9 +89,17 @@ git fetch origin
 BRANCH="[gitBranchName from issue]"
 ISSUE_ID="[issue identifier in lowercase, e.g. abc-123]"
 
-# Create worktree using Linear's branch name
+# Detect the repo's default branch (don't assume "main")
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+if [ -z "$DEFAULT_BRANCH" ]; then
+  # Fallback: ask the remote directly, then cache for future runs
+  DEFAULT_BRANCH=$(git remote show origin | awk '/HEAD branch/ {print $NF}')
+  git remote set-head origin "$DEFAULT_BRANCH" 2>/dev/null || true
+fi
+
+# Create worktree using Linear's branch name, based on the default branch
 mkdir -p .worktrees
-git worktree add ".worktrees/${ISSUE_ID}" -b "${BRANCH}" origin/main
+git worktree add ".worktrees/${ISSUE_ID}" -b "${BRANCH}" "origin/${DEFAULT_BRANCH}"
 ```
 
 Post comment:
