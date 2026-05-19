@@ -52,10 +52,16 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const { board, updates } = parseMondayExport(options.file);
   
   const summary = getBoardSummary(board);
+  const importAs = config.dataModel.items.importAs;
+  const subitemsEnabled = config.dataModel.items.subitems?.enabled === true;
+  const mainLabel = importAs === 'project' ? 'Projects' : importAs === 'parentIssue' || subitemsEnabled ? 'Parent issues' : 'Issues';
+  const subLabel = importAs === 'project' ? 'Issues' : 'Sub-issues';
   console.log(`  Board name: ${board.name}`);
   console.log(`  Board sections: ${summary.totalGroups}`);
-  console.log(`  Projects to import: ${summary.totalMainItems}`);
-  console.log(`  Issues to import: ${summary.totalSubitems}`);
+  console.log(`  ${mainLabel} to import: ${summary.totalMainItems}`);
+  if (summary.totalSubitems > 0) {
+    console.log(`  ${subLabel} to import: ${summary.totalSubitems}`);
+  }
   if (updates && updates.updates.length > 0) {
     console.log(`  Updates to import: ${updates.updates.length}`);
   }
@@ -112,6 +118,13 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   // Re-discover with team context (for issue states)
   await linearClient.discoverWorkspace(teamKey);
+
+  // Ensure any custom Linear statuses defined in config exist (create if missing)
+  if (config.customIssueStates?.length || config.customProjectStatuses?.length) {
+    console.log('\nEnsuring custom Linear statuses exist...');
+    await linearClient.ensureCustomProjectStatuses(config.customProjectStatuses, isDryRun);
+    await linearClient.ensureCustomIssueStates(teamId, config.customIssueStates, isDryRun);
+  }
 
   // Fetch existing data for deduplication
   if (config.deduplication?.enabled) {

@@ -61,13 +61,18 @@ export async function runMondayImport(
 
   const importAs = config.dataModel.items.importAs;
   const isProject = importAs === 'project';
+  // Treat issue-mode + enabled subitems as parent-issue mode so subitems
+  // get attached as sub-issues via parentId instead of being dropped.
+  const subitemsEnabled = config.dataModel.items.subitems?.enabled === true;
+  const isParentIssue = importAs === 'parentIssue' || (importAs === 'issue' && subitemsEnabled);
 
   // Phase 1: Prepare labels
   console.log(`\nPhase 1: Preparing labels...`);
   const labelCache = await prepareLabels(mainItems, board, config, linearClient, teamId, dryRun, result);
 
   // Phase 2: Import main items
-  console.log(`\nPhase 2: Importing ${mainItems.length} ${isProject ? 'projects' : 'issues'}...`);
+  const mainLabel = isProject ? 'projects' : isParentIssue ? 'parent issues' : 'issues';
+  console.log(`\nPhase 2: Importing ${mainItems.length} ${mainLabel}...`);
 
   for (let i = 0; i < mainItems.length; i++) {
     const item = mainItems[i];
@@ -106,12 +111,13 @@ export async function runMondayImport(
       const labelIds = resolveLabelIds(item, board, config, labelCache, isProject);
 
       if (dryRun) {
-        console.log(`  → Would create ${isProject ? 'project' : 'issue'}: ${itemName}`);
+        const kind = isProject ? 'project' : isParentIssue ? 'parent issue' : 'issue';
+        console.log(`  → Would create ${kind}: ${itemName}`);
         console.log(`    Group: ${item.group || '(none)'}`);
         console.log(`    Labels: ${labelIds.length}`);
         if (item.subitems && item.subitems.length > 0) {
-          console.log(`    Subitems: ${item.subitems.length}`);
-          // Count subitems as issues
+          const subKind = isParentIssue ? 'sub-issues' : 'subitems';
+          console.log(`    ${subKind}: ${item.subitems.length}`);
           for (const subitem of item.subitems) {
             const subitemName = subitem.data['Name'] || subitem.data['name'] || 'Untitled Subitem';
             if (subitemName && subitemName !== 'Untitled Subitem') {
@@ -153,7 +159,7 @@ export async function runMondayImport(
             if (!subitemName || subitemName === 'Untitled Subitem') continue;
             
             try {
-              const subitemData = buildIssueData(subitem, config, linearClient, teamId);
+              const subitemData = buildIssueData(subitem, config, linearClient, teamId, true);
               const subCreated = await linearClient.createIssue({
                 ...subitemData,
                 title: truncate(subitemName, 255),
@@ -178,8 +184,32 @@ export async function runMondayImport(
         createdId = created.id;
         createdUrl = created.url;
         result.summary.issuesCreated++;
-        
+
         console.log(`  ✓ Created: ${created.identifier}`);
+
+        // In parentIssue mode, attach subitems as sub-issues via parentId
+        if (isParentIssue && item.subitems && item.subitems.length > 0) {
+          for (const subitem of item.subitems) {
+            const subitemName = subitem.data['Name'] || subitem.data['name'] || 'Untitled Subitem';
+            if (!subitemName || subitemName === 'Untitled Subitem') continue;
+
+            try {
+              const subitemData = buildIssueData(subitem, config, linearClient, teamId, true);
+              const subCreated = await linearClient.createIssue({
+                ...subitemData,
+                title: truncate(subitemName, 255),
+                teamId: teamId,
+                parentId: createdId,
+              });
+              console.log(`    ✓ Sub-issue: ${subCreated.identifier} - ${truncateDisplay(subitemName, 40)}`);
+              result.summary.issuesCreated++;
+              result.mapping[subitemName] = subCreated.id;
+            } catch (subError) {
+              const msg = subError instanceof Error ? subError.message : String(subError);
+              console.log(`    ✗ Sub-issue failed: ${truncateDisplay(subitemName, 40)} — ${msg}`);
+            }
+          }
+        }
       }
 
       result.mapping[itemName] = createdId;
@@ -516,6 +546,7 @@ function buildIssueData(
   config: ImportConfig,
   linearClient: LinearClientWrapper,
   teamId: string,
+  isSubitem: boolean = false,
 ): {
   title: string;
   description?: string;
@@ -525,7 +556,9 @@ function buildIssueData(
   estimate?: number;
   dueDate?: string;
 } {
-  const mappings = config.fieldMappings?.issue || {};
+  const mappings = (isSubitem && config.fieldMappings?.subitem)
+    ? config.fieldMappings.subitem
+    : (config.fieldMappings?.issue || {});
   
   const getTitle = () => {
     if (mappings.title?.source || mappings.name?.source) {
@@ -555,8 +588,10 @@ function buildIssueData(
     if (stateMapping?.source) {
       const rawState = item.data[stateMapping.source];
       if (rawState) {
-        // Use issueStatusMapping if available, otherwise fall back to statusMapping
-        const statusMap = config.issueStatusMapping || config.statusMapping;
+        // Subitems use issueStatusMapping; main items use statusMapping.
+        const statusMap = isSubitem
+          ? (config.issueStatusMapping || config.statusMapping)
+          : config.statusMapping;
         const mappedState = statusMap[rawState] || statusMap['_default'] || rawState;
         return linearClient.resolveIssueStateId(mappedState);
       }

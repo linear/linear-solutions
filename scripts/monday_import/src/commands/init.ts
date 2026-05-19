@@ -7,7 +7,104 @@ import { resolve } from 'path';
 import { select, input, checkbox, confirm } from '@inquirer/prompts';
 import { parseMondayExport, getBoardSummary, columnIndexToLetter, formatColumn } from '../parser/monday.js';
 import type { MondayBoard } from '../parser/monday.js';
-import type { ImportConfig, FieldMapping, TransformType } from '../config/schema.js';
+import type {
+  ImportConfig,
+  FieldMapping,
+  TransformType,
+  CustomIssueStateDef,
+  CustomProjectStatusDef,
+  IssueStateType,
+  ProjectStatusType,
+} from '../config/schema.js';
+
+const CUSTOM_STATUS_SENTINEL = '__custom__';
+const ISSUE_STATE_TYPES: IssueStateType[] = ['backlog', 'unstarted', 'started', 'completed', 'canceled'];
+const PROJECT_STATUS_TYPES: ProjectStatusType[] = ['backlog', 'planned', 'started', 'paused', 'completed', 'canceled'];
+
+function dedupeByName<T extends { name: string }>(defs: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const d of defs) {
+    if (seen.has(d.name)) continue;
+    seen.add(d.name);
+    out.push(d);
+  }
+  return out;
+}
+
+async function promptCustomStatus<T extends IssueStateType | ProjectStatusType>(
+  sourceStatus: string,
+  kind: 'issue' | 'project',
+): Promise<{ name: string; type: T; color?: string }> {
+  const name = (await input({
+    message: `  New Linear ${kind} status name for "${sourceStatus}":`,
+    validate: (v) => v.trim().length > 0 || 'Name is required',
+  })).trim();
+
+  const typeChoices = (kind === 'issue' ? ISSUE_STATE_TYPES : PROJECT_STATUS_TYPES)
+    .map((t) => ({ name: t, value: t }));
+
+  const type = (await select({
+    message: `    State category for "${name}":`,
+    choices: typeChoices,
+  })) as T;
+
+  const color = (await input({
+    message: '    Hex color (optional, e.g. #95A2B3):',
+    default: '#95A2B3',
+  })).trim() || undefined;
+
+  return { name, type, color };
+}
+
+async function mapStatuses(
+  uniqueStatuses: Set<string>,
+  builtIns: string[],
+  kind: 'issue' | 'project',
+): Promise<{
+  mappings: Record<string, string>;
+  customIssue: CustomIssueStateDef[];
+  customProject: CustomProjectStatusDef[];
+}> {
+  const mappings: Record<string, string> = {};
+  const customIssue: CustomIssueStateDef[] = [];
+  const customProject: CustomProjectStatusDef[] = [];
+  const alreadyDefined = new Set<string>();
+
+  for (const status of uniqueStatuses) {
+    const choices = [
+      ...builtIns.map((s) => ({ name: s, value: s })),
+      ...[...alreadyDefined]
+        .filter((n) => !builtIns.includes(n))
+        .map((n) => ({ name: `${n} (custom)`, value: n })),
+      { name: '+ Add custom Linear status...', value: CUSTOM_STATUS_SENTINEL },
+    ];
+
+    const choice = await select({
+      message: `  "${status}" →`,
+      choices,
+    });
+
+    if (choice === CUSTOM_STATUS_SENTINEL) {
+      if (kind === 'issue') {
+        const def = await promptCustomStatus<IssueStateType>(status, 'issue');
+        customIssue.push(def);
+        mappings[status] = def.name;
+        alreadyDefined.add(def.name);
+      } else {
+        const def = await promptCustomStatus<ProjectStatusType>(status, 'project');
+        customProject.push(def);
+        mappings[status] = def.name;
+        alreadyDefined.add(def.name);
+      }
+    } else {
+      mappings[status] = choice;
+      alreadyDefined.add(choice);
+    }
+  }
+
+  return { mappings, customIssue, customProject };
+}
 
 export interface InitOptions {
   output: string;
@@ -91,7 +188,9 @@ export async function initCommand(excelPath: string, options: InitOptions): Prom
 
   let statusColumn: string | undefined;
   let statusMappings: Record<string, string> = { '_default': 'Backlog' };
-  
+  let customIssueStates: CustomIssueStateDef[] = [];
+  let customProjectStatuses: CustomProjectStatusDef[] = [];
+
   if (hasStatus) {
     statusColumn = await select({
       message: 'Which column contains the status?',
@@ -107,19 +206,16 @@ export async function initCommand(excelPath: string, options: InitOptions): Prom
     }
 
     if (uniqueStatuses.size > 0 && uniqueStatuses.size <= 15) {
-      console.log('\nMap each status to a Linear project status:');
-      // Linear project statuses (not issue statuses)
+      const kind: 'issue' | 'project' = importAs === 'project' ? 'project' : 'issue';
+      console.log(`\nMap each status to a Linear ${kind} status (or add a custom one):`);
       const linearProjectStatuses = ['Backlog', 'Planned', 'Started', 'Paused', 'Completed', 'Canceled'];
       const linearIssueStatuses = ['Backlog', 'Todo', 'In Progress', 'In Review', 'Done', 'Canceled'];
-      const linearStatuses = importAs === 'project' ? linearProjectStatuses : linearIssueStatuses;
-      
-      for (const status of uniqueStatuses) {
-        const mapped = await select({
-          message: `  "${status}" →`,
-          choices: linearStatuses.map(s => ({ name: s, value: s })),
-        });
-        statusMappings[status] = mapped;
-      }
+      const builtIns = kind === 'project' ? linearProjectStatuses : linearIssueStatuses;
+
+      const result = await mapStatuses(uniqueStatuses, builtIns, kind);
+      statusMappings = { ...statusMappings, ...result.mappings };
+      customIssueStates = result.customIssue;
+      customProjectStatuses = result.customProject;
     }
   }
 
@@ -302,16 +398,12 @@ export async function initCommand(excelPath: string, options: InitOptions): Prom
           }
           
           if (uniqueSubitemStatuses.size > 0 && uniqueSubitemStatuses.size <= 15) {
-            console.log('\nMap each subitem status to a Linear issue state:');
+            console.log('\nMap each subitem status to a Linear issue state (or add a custom one):');
             const linearIssueStates = ['Backlog', 'Todo', 'In Progress', 'In Review', 'Done', 'Canceled'];
-            
-            for (const status of uniqueSubitemStatuses) {
-              const mapped = await select({
-                message: `  "${status}" →`,
-                choices: linearIssueStates.map(s => ({ name: s, value: s })),
-              });
-              issueStatusMappings[status] = mapped;
-            }
+
+            const result = await mapStatuses(uniqueSubitemStatuses, linearIssueStates, 'issue');
+            issueStatusMappings = { ...issueStatusMappings, ...result.mappings };
+            customIssueStates = [...customIssueStates, ...result.customIssue];
           }
         }
       }
@@ -437,12 +529,19 @@ export async function initCommand(excelPath: string, options: InitOptions): Prom
   
   if (importAs === 'project') {
     fieldMappings.project = buildProjectMappings(nameColumn, descriptionColumns, statusColumn, leadColumn, timelineColumn, startDateColumn, targetDateColumn);
-    // Add issue mappings for subitems if enabled
+    // When importing main items as projects, subitems become issues — their
+    // mappings go on fieldMappings.issue.
     if (importSubitems && Object.keys(subitemFieldMappings).length > 0) {
       fieldMappings.issue = subitemFieldMappings;
     }
   } else {
     fieldMappings.issue = buildIssueMappings(nameColumn, descriptionColumns, statusColumn, leadColumn);
+    // In parent-issue mode, subitems use their own header set (e.g. "Status
+    // of Work" instead of "Status") — keep them on fieldMappings.subitem so
+    // the parent mapping isn't overwritten.
+    if (importSubitems && Object.keys(subitemFieldMappings).length > 0) {
+      fieldMappings.subitem = subitemFieldMappings;
+    }
   }
 
   const config: ImportConfig = {
@@ -472,6 +571,8 @@ export async function initCommand(excelPath: string, options: InitOptions): Prom
     fieldMappings,
     statusMapping: statusMappings,
     issueStatusMapping: importSubitems ? issueStatusMappings : undefined,
+    customIssueStates: customIssueStates.length > 0 ? dedupeByName(customIssueStates) : undefined,
+    customProjectStatuses: customProjectStatuses.length > 0 ? dedupeByName(customProjectStatuses) : undefined,
     priorityMapping: { '_default': 0 },
     labels: labelColumns.map(col => ({
       sourceColumn: col,
