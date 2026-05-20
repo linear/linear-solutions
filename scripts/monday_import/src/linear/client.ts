@@ -3,6 +3,7 @@
  */
 
 import { LinearClient as LinearSDK, LinearDocument } from '@linear/sdk';
+import type { CustomIssueStateDef, CustomProjectStatusDef } from '../config/schema.js';
 import type { 
   Team, 
   User, 
@@ -325,6 +326,161 @@ export class LinearClientWrapper {
     return this.workspace.issueStates.get(stateName) ?? 
            this.workspace.issueStates.get(stateName.toLowerCase()) ?? 
            null;
+  }
+
+  /**
+   * Ensure custom Linear workflow states exist on the given team.
+   * Looks up each by name in the existing cache; creates any that are missing.
+   */
+  async ensureCustomIssueStates(
+    teamId: string,
+    defs: CustomIssueStateDef[] | undefined,
+    dryRun: boolean = false,
+  ): Promise<void> {
+    if (!this.workspace) {
+      throw new Error('Workspace not discovered. Call discoverWorkspace first.');
+    }
+    if (!defs || defs.length === 0) return;
+
+    // Workflow states must be defined on the top-level (parent) team in Linear.
+    // Sub-teams inherit their parent's workflow states and cannot create their own.
+    // Resolve to the parent team id if the configured team is a sub-team, and also
+    // pull the parent's existing states into the cache so we don't try to recreate them.
+    const stateTeamId = await this.resolveWorkflowStateTeamId(teamId);
+    if (stateTeamId !== teamId) {
+      console.log(`      ↑ Detected sub-team; creating workflow states on parent team`);
+      this.track();
+      const parentTeam = await this.client.team(stateTeamId);
+      this.track();
+      const parentStates = await parentTeam.states();
+      for (const state of parentStates.nodes) {
+        if (!this.workspace.issueStates.has(state.name)) {
+          this.workspace.issueStates.set(state.name, state.id);
+          this.workspace.issueStates.set(state.name.toLowerCase(), state.id);
+        }
+      }
+    }
+
+    for (const def of defs) {
+      const existing =
+        this.workspace.issueStates.get(def.name) ??
+        this.workspace.issueStates.get(def.name.toLowerCase());
+      if (existing) {
+        console.log(`      ✓ Using existing issue state: ${def.name}`);
+        continue;
+      }
+
+      if (dryRun) {
+        console.log(`      [dry-run] Would create Linear issue state: ${def.name} (${def.type})`);
+        continue;
+      }
+
+      console.log(`      Creating issue state: ${def.name} (${def.type})`);
+      this.track();
+      await this.delay();
+      try {
+        const result = await this.client.createWorkflowState({
+          teamId: stateTeamId,
+          name: def.name,
+          type: def.type,
+          color: def.color ?? '#95A2B3',
+        });
+        const state = await result.workflowState;
+        if (state) {
+          this.workspace.issueStates.set(state.name, state.id);
+          this.workspace.issueStates.set(state.name.toLowerCase(), state.id);
+          console.log(`      ✓ Created issue state: ${def.name}`);
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to create workflow state "${def.name}": ${errorMsg}`);
+      }
+    }
+  }
+
+  /**
+   * Return the team id where workflow states should be created. If the given
+   * team is a sub-team, returns the top-level parent team id; otherwise
+   * returns the input id unchanged.
+   */
+  private async resolveWorkflowStateTeamId(teamId: string): Promise<string> {
+    let currentId = teamId;
+    // Walk up the team hierarchy via raw GraphQL since the SDK Team type
+    // does not expose `parent` directly.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      this.track();
+      const res = await this.client.client.request<
+        { team: { id: string; parent: { id: string } | null } | null },
+        { id: string }
+      >(
+        `query TeamParent($id: String!) { team(id: $id) { id parent { id } } }`,
+        { id: currentId },
+      );
+      const parentId = res.team?.parent?.id;
+      if (!parentId) return currentId;
+      currentId = parentId;
+    }
+  }
+
+  /**
+   * Ensure custom Linear project statuses exist (workspace-level).
+   * Looks up each by name in the existing cache; creates any that are missing.
+   */
+  async ensureCustomProjectStatuses(
+    defs: CustomProjectStatusDef[] | undefined,
+    dryRun: boolean = false,
+  ): Promise<void> {
+    if (!this.workspace) {
+      throw new Error('Workspace not discovered. Call discoverWorkspace first.');
+    }
+    if (!defs || defs.length === 0) return;
+
+    for (const def of defs) {
+      const existing =
+        this.workspace.projectStatuses.get(def.name) ??
+        this.workspace.projectStatuses.get(def.name.toLowerCase());
+      if (existing) {
+        console.log(`      ✓ Using existing project status: ${def.name}`);
+        continue;
+      }
+
+      if (dryRun) {
+        console.log(`      [dry-run] Would create Linear project status: ${def.name} (${def.type})`);
+        continue;
+      }
+
+      console.log(`      Creating project status: ${def.name} (${def.type})`);
+      this.track();
+      await this.delay();
+      try {
+        const result = await this.client.client.request<
+          { projectStatusCreate: { success: boolean; projectStatus: { id: string; name: string } | null } },
+          { input: { name: string; type: string; color?: string } }
+        >(
+          `
+          mutation CreateProjectStatus($input: ProjectStatusCreateInput!) {
+            projectStatusCreate(input: $input) {
+              success
+              projectStatus {
+                id
+                name
+              }
+            }
+          }
+        `,
+          { input: { name: def.name, type: def.type, color: def.color ?? '#95A2B3' } },
+        );
+        const status = result.projectStatusCreate?.projectStatus;
+        if (status) {
+          this.workspace.projectStatuses.set(status.name, status.id);
+          console.log(`      ✓ Created project status: ${def.name}`);
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to create project status "${def.name}": ${errorMsg}`);
+      }
+    }
   }
 
   /**

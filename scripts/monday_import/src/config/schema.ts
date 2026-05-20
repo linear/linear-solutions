@@ -11,6 +11,8 @@ export interface ImportConfig {
   fieldMappings: FieldMappingsConfig;
   statusMapping: Record<string, string>;
   issueStatusMapping?: Record<string, string>;
+  customIssueStates?: CustomIssueStateDef[];
+  customProjectStatuses?: CustomProjectStatusDef[];
   priorityMapping: Record<string, number>;
   labels: LabelConfig[];
   groups?: GroupsConfig;
@@ -57,6 +59,7 @@ export type ImportAs = 'project' | 'issue' | 'parentIssue';
 export interface FieldMappingsConfig {
   project?: Record<string, FieldMapping>;
   issue?: Record<string, FieldMapping>;
+  subitem?: Record<string, FieldMapping>;
 }
 
 export interface FieldMapping {
@@ -140,6 +143,21 @@ export interface OptionsConfig {
   continueOnError?: boolean;
   rateLimitMs?: number;
   skipEmpty?: boolean;
+}
+
+export type IssueStateType = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+export type ProjectStatusType = 'backlog' | 'planned' | 'started' | 'paused' | 'completed' | 'canceled';
+
+export interface CustomIssueStateDef {
+  name: string;
+  type: IssueStateType;
+  color?: string;
+}
+
+export interface CustomProjectStatusDef {
+  name: string;
+  type: ProjectStatusType;
+  color?: string;
 }
 
 export interface DeduplicationConfig {

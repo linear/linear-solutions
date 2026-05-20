@@ -190,6 +190,11 @@ Controls how Monday.com items map to Linear entities.
 }
 ```
 
+`importAs` accepts:
+- `"project"` — main items become Linear projects; subitems become issues inside the project.
+- `"issue"` — main items become flat issues; subitems are ignored.
+- `"parentIssue"` — main items become top-level issues and their Monday subitems are attached as **sub-issues** (via `parentId`) under that parent. Use this when you want Linear's native parent/child issue hierarchy instead of the project/issue split.
+
 #### Field Mappings
 Map Monday.com columns to Linear fields. Separate mappings for projects and issues.
 
