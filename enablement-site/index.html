@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linear · Enablement Guide</title>
+<style>
+  :root{
+    /* Linear brand palette — Mercury White, Nordic Gray, restrained desaturated blue */
+    --bg:#F4F5F8; --panel:#FFFFFF; --ink:#222326; --muted:#6A6E78;
+    --line:#E3E5EC; --indigo:#4E5FB0; --indigo-soft:#ECEEF6; --indigo-ink:#3D4D96;
+    --code:#3D4D96; --code-bg:#ECEEF3;
+    --shadow:0 1px 2px rgba(34,35,38,.04),0 6px 24px rgba(34,35,38,.06);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6; font-size:15px;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--indigo-ink); text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .app{display:grid; grid-template-columns:288px 1fr; min-height:100vh}
+  .scrim{display:none}  /* never in desktop grid flow; only shown as mobile overlay */
+
+  /* ---------- Sidebar ---------- */
+  .side{
+    position:sticky; top:0; height:100vh; overflow-y:auto;
+    background:#fff; border-right:1px solid var(--line); padding:22px 16px 40px;
+  }
+  .brand{display:flex; align-items:center; gap:9px; padding:6px 8px 2px}
+  .brand .logo{width:22px; height:22px; color:var(--ink); flex:none}
+  .brand .logo svg{display:block; width:100%; height:100%}
+  .brand .mark{font-size:22px; font-weight:700; letter-spacing:-.6px; color:var(--ink)}
+  .brand .sub{font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.6px; margin-left:auto}
+  .tagline{padding:2px 8px 16px; color:var(--muted); font-size:12px}
+  .search{position:relative; margin:0 4px 14px}
+  .search input{
+    width:100%; padding:9px 12px 9px 32px; border:1px solid var(--line); border-radius:9px;
+    background:var(--bg); font-size:13px; color:var(--ink); outline:none;
+  }
+  .search input:focus{border-color:var(--indigo); background:#fff}
+  .search svg{position:absolute; left:10px; top:9px; width:15px; height:15px; stroke:var(--muted)}
+
+  .grp{margin:2px 0}
+  .grp>button{
+    width:100%; display:flex; align-items:center; gap:8px; background:none; border:0; cursor:pointer;
+    padding:9px 10px; border-radius:8px; color:var(--ink); font-size:12px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.5px;
+  }
+  .grp>button:hover{background:var(--bg)}
+  .grp>button .chev{margin-left:auto; transition:transform .18s ease; color:var(--muted)}
+  .grp.collapsed>button .chev{transform:rotate(-90deg)}
+  .grp .items{overflow:hidden; transition:max-height .22s ease}
+  .grp.collapsed .items{max-height:0 !important}
+  .item{
+    display:block; width:100%; text-align:left; border:0; background:none; cursor:pointer;
+    padding:7px 10px 7px 22px; border-radius:8px; color:var(--muted); font-size:13.5px; line-height:1.35;
+    position:relative;
+  }
+  .item:hover{color:var(--ink); background:var(--bg)}
+  .item.active{color:var(--indigo-ink); background:var(--indigo-soft); font-weight:600}
+  .item.active::before{content:""; position:absolute; left:8px; top:50%; transform:translateY(-50%); width:3px; height:16px; border-radius:3px; background:var(--indigo)}
+  .item.hidden{display:none}
+
+  /* ---------- Content ---------- */
+  .main{min-width:0}
+  .topbar{
+    position:sticky; top:0; z-index:5; background:rgba(247,248,250,.85); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line); padding:14px 40px; display:flex; align-items:center; gap:14px;
+  }
+  .crumb{font-size:12.5px; color:var(--muted)}
+  .crumb b{color:var(--ink)}
+  .nav-btns{margin-left:auto; display:flex; gap:8px}
+  .nav-btns button{
+    border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 12px; font-size:12.5px;
+    color:var(--ink); cursor:pointer; display:flex; align-items:center; gap:6px;
+  }
+  .nav-btns button:hover:not(:disabled){border-color:var(--indigo); color:var(--indigo-ink)}
+  .nav-btns button:disabled{opacity:.4; cursor:default}
+  .menu-toggle{display:none}
+
+  .wrap{max-width:820px; margin:0 auto; padding:36px 40px 90px}
+  .panel{display:none; animation:fade .25s ease}
+  .panel.active{display:block}
+  @keyframes fade{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
+
+  .eyebrow{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:var(--indigo); margin:0 0 6px}
+  h1.title{font-size:30px; line-height:1.2; margin:0 0 8px; letter-spacing:-.5px}
+  .lead{font-size:16px; color:var(--muted); margin:0 0 26px}
+  h2{font-size:18px; margin:30px 0 10px; letter-spacing:-.2px}
+  h3{font-size:15px; margin:20px 0 6px; color:#374151}
+  p{margin:0 0 12px}
+  ul{margin:0 0 14px; padding-left:0; list-style:none}
+  li{position:relative; padding:4px 0 4px 22px}
+  li::before{content:""; position:absolute; left:4px; top:13px; width:6px; height:6px; border-radius:50%; background:var(--indigo)}
+  ol{margin:0 0 14px; padding-left:20px}
+  ol li{padding-left:6px}
+  ol li::before{display:none}
+  .k{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; background:var(--code-bg); color:var(--code); padding:1px 6px; border-radius:5px}
+  .callout{
+    border:1px solid var(--indigo); border-left:5px solid var(--indigo); background:var(--indigo-soft);
+    border-radius:10px; padding:12px 16px; margin:14px 0; font-size:14px;
+  }
+  .callout b.lbl{color:var(--indigo-ink); margin-right:6px}
+  .pre{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; background:#222326; color:#e7e9f3; padding:14px 16px; border-radius:10px; overflow-x:auto; margin:10px 0}
+
+  table.lt{width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px; box-shadow:var(--shadow); border-radius:10px; overflow:hidden}
+  table.lt th{background:var(--ink); color:#fff; text-align:left; padding:10px 14px; font-weight:600; font-size:12.5px}
+  table.lt td{padding:10px 14px; border-top:1px solid var(--line); vertical-align:top}
+  table.lt tr:nth-child(even) td{background:#F7F8FB}
+
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:16px 0}
+  .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow); cursor:pointer; transition:.15s}
+  .card:hover{border-color:var(--indigo); transform:translateY(-2px)}
+  .card .ttl{font-weight:700; margin-bottom:4px}
+  .card .dsc{font-size:13px; color:var(--muted)}
+
+  .hero{background:linear-gradient(135deg,#FFFFFF 0%, #ECEEFB 52%, #E1E6FA 100%); color:var(--ink); border:1px solid #E1E4F2; border-radius:18px; padding:38px 40px; margin-bottom:26px; box-shadow:0 1px 2px rgba(34,35,38,.04), 0 16px 44px rgba(94,106,210,.12); position:relative; overflow:hidden}
+  .hero::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:linear-gradient(180deg,var(--indigo),#8E97E6)}
+  .hero .wmark{position:absolute; right:-28px; bottom:-52px; width:236px; height:236px; color:var(--indigo); opacity:.09; transform:rotate(-6deg); pointer-events:none}
+  .hero .wmark svg{display:block; width:100%; height:100%}
+  .hero .hbrand{display:flex; align-items:center; gap:10px; margin-bottom:16px; position:relative}
+  .hero .hbrand .logo{width:24px; height:24px; color:var(--indigo); flex:none}
+  .hero .hbrand .logo svg{display:block; width:100%; height:100%}
+  .hero .hbrand .wm{font-size:18px; font-weight:700; letter-spacing:-.5px; color:var(--ink)}
+  .hero .mk{font-size:12px; color:var(--indigo-ink); font-weight:700; letter-spacing:.8px; text-transform:uppercase; position:relative}
+  .hero h1{font-size:37px; margin:4px 0 10px; letter-spacing:-.8px; color:var(--ink); position:relative}
+  .hero p{font-size:16px; color:#454a57; margin:0; max-width:640px; position:relative}
+
+  .tag{display:inline-block; font-size:11px; font-weight:700; color:var(--indigo-ink); background:var(--indigo-soft); padding:2px 9px; border-radius:20px; margin-left:8px; vertical-align:middle}
+
+  /* media: screenshots, video clips & embeds */
+  figure.media{margin:18px 0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; box-shadow:var(--shadow)}
+  figure.media img{display:block; width:100%; height:auto}
+  figure.media video{display:block; width:100%; height:auto; background:#222326}
+  figure.media .embed{position:relative; padding-top:56.25%; background:#222326}
+  figure.media .embed iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
+  figure.media figcaption{padding:9px 14px; font-size:12.5px; color:var(--muted); border-top:1px solid var(--line)}
+  figure.media.ph{border-style:dashed; border-color:var(--indigo); background:var(--indigo-soft); box-shadow:none}
+  figure.media.ph img, figure.media.ph video, figure.media.ph .embed, figure.media.ph figcaption{display:none}
+  figure.media .phbox{display:none; padding:22px 18px; text-align:center; color:var(--indigo-ink); font-size:13px; line-height:1.55}
+  figure.media.ph .phbox{display:block}
+  .phbox .ic{display:inline-block; font-weight:800; letter-spacing:1px; font-size:10.5px; padding:3px 9px; border:1px solid var(--indigo); border-radius:20px; margin-bottom:9px}
+  .phbox .fn{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; background:#fff; border:1px solid var(--indigo); padding:2px 8px; border-radius:6px; color:var(--indigo-ink)}
+  /* clickable recording card (for links that can't be iframed, e.g. share.linear.app) */
+  .watch{position:relative; display:block; padding-top:56.25%; background:#222326; text-decoration:none}
+  .watch img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+  .watch .play{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:62px; height:62px; border-radius:50%; background:rgba(255,255,255,.94); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 20px rgba(0,0,0,.35); transition:transform .15s ease, background .15s ease}
+  .watch .play svg{width:26px; height:26px; color:var(--ink); margin-left:3px}
+  .watch:hover .play{background:#fff; transform:translate(-50%,-50%) scale(1.07)}
+  .watch .watchlbl{position:absolute; left:0; right:0; bottom:0; padding:12px 14px; color:#fff; font-size:13px; font-weight:600; background:linear-gradient(transparent,rgba(0,0,0,.6)); text-align:left}
+
+  @media (max-width:880px){
+    .app{grid-template-columns:1fr}
+    .side{position:fixed; z-index:30; width:288px; transform:translateX(-100%); transition:transform .25s ease; box-shadow:var(--shadow)}
+    .side.open{transform:none}
+    .menu-toggle{display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid var(--line); background:#fff; border-radius:9px; cursor:pointer}
+    .wrap{padding:24px 18px 80px}
+    .topbar{padding:12px 18px}
+    .scrim{display:none; position:fixed; inset:0; background:rgba(0,0,0,.3); z-index:20}
+    .scrim.show{display:block}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-label="Linear logo"><path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.629 0 24 5.372 24 11.991c0 3.704-1.678 7.017-4.318 9.218L2.886 4.18ZM1.058 6.513a11.945 11.945 0 0 0-.71 1.728l14.823 14.824a11.97 11.97 0 0 0 1.728-.71L1.058 6.513ZM.166 10.071a12.05 12.05 0 0 0-.16 1.984L11.945 23.994c.674-.005 1.338-.06 1.984-.16L.166 10.072ZM.005 13.793A12 12 0 0 0 10.207 23.995L.005 13.793Z"/></svg></span><span class="mark">Linear</span></div>
+    <div class="tagline">Get productive fast, then go deeper by role</div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="q" type="text" placeholder="Search the guide…" autocomplete="off">
+    </div>
+    <nav id="nav"></nav>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="menu-toggle" id="menu" aria-label="Menu">☰</button>
+      <div class="crumb" id="crumb"></div>
+      <div class="nav-btns">
+        <button id="prev">← Prev</button>
+        <button id="next">Next →</button>
+      </div>
+    </div>
+    <div class="wrap" id="content"></div>
+  </main>
+</div>
+
+<script>
+// ---------------- Content model ----------------
+const L = (t,u)=>`<a href="${u}" target="_blank" rel="noopener">${t}</a>`;
+const K = t=>`<span class="k">${t}</span>`;
+const CO = (lbl,html)=>`<div class="callout"><b class="lbl">${lbl}</b>${html}</div>`;
+
+// ---- media helpers ----
+// IMG: screenshot. Shows a placeholder until media/<file> exists — just drop the file in.
+const IMG=(file,cap,maxw)=>`<figure class="media"${maxw?` style="max-width:${maxw};margin-left:auto;margin-right:auto"`:''}><img src="media/${file}" alt="${(cap||'').replace(/"/g,'&quot;')}" onerror="this.closest('figure').classList.add('ph')"><div class="phbox"><span class="ic">SCREENSHOT</span><div>Save your screenshot as <span class="fn">media/${file}</span></div>${cap?`<div style="margin-top:6px;color:var(--muted)">${cap}</div>`:''}</div>${cap?`<figcaption>${cap}</figcaption>`:''}</figure>`;
+// EMBED: Loom/YouTube recording. Pass a URL to embed; pass "" to leave a paste-the-URL placeholder.
+function EMBED(url,cap){
+  if(!url) return `<figure class="media ph"><div class="phbox"><span class="ic">RECORDING</span><div>Paste a Loom or YouTube URL into <span class="fn">EMBED("…")</span> for this section.</div>${cap?`<div style="margin-top:6px;color:var(--muted)">${cap}</div>`:''}</div></figure>`;
+  // Linear share links (and other non-embeddable hosts) block iframes — show a clickable card instead.
+  if(/share\.linear\.app/.test(url)) return WATCH(url,cap);
+  let src=url;
+  const yt=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([\w-]+)/);
+  const lm=url.match(/loom\.com\/(?:share|embed)\/([\w-]+)/);
+  if(yt) src="https://www.youtube.com/embed/"+yt[1];
+  else if(lm) src="https://www.loom.com/embed/"+lm[1];
+  return `<figure class="media"><div class="embed"><iframe src="${src}" loading="lazy" allow="fullscreen" allowfullscreen></iframe></div>${cap?`<figcaption>${cap}</figcaption>`:''}</figure>`;
+}
+// VIDEO: native inline player — plays in the page, no redirect. poster shows until played.
+// Shows a placeholder until media/<file> exists; falls back to a click-out link if the file is missing.
+const VIDEO=(file,poster,cap,fallbackUrl)=>`<figure class="media"><video controls autoplay loop muted playsinline preload="metadata" ${poster?`poster="media/${poster}"`:''} onerror="var f=this.closest('figure'); f.classList.add('ph'); ${poster?`f.querySelector('.phposter').src='media/${poster}';`:''}"><source src="media/${file}" type="video/mp4"></video><div class="phbox">${poster?`<img class="phposter" src="media/${poster}" alt="" style="max-width:100%;border-radius:8px;margin-bottom:10px">`:''}<span class="ic">VIDEO</span><div>Save the recording as <span class="fn">media/${file}</span> to play it inline.</div>${fallbackUrl?`<div style="margin-top:8px">${L("Open recording in Linear ↗",fallbackUrl)}</div>`:''}</div>${cap?`<figcaption>${cap}</figcaption>`:''}</figure>`;
+// GIF: animated recording that plays inline automatically (loops, no controls, no redirect).
+const GIF=(file,cap)=>`<figure class="media"><img src="media/${file}" alt="${(cap||'').replace(/"/g,'&quot;')}" loading="lazy" onerror="this.closest('figure').classList.add('ph')"><div class="phbox"><span class="ic">RECORDING (GIF)</span><div>Save your recording as <span class="fn">media/${file}</span> — it plays inline automatically.</div></div>${cap?`<figcaption>${cap}</figcaption>`:''}</figure>`;
+// WATCH: clickable recording card that opens in a new tab. Optional poster image (media/<poster>).
+const WATCH=(url,cap,poster)=>`<figure class="media"><a class="watch" href="${url}" target="_blank" rel="noopener">${poster?`<img src="media/${poster}" alt="" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=this.src.replace(/\\.webp$/,'.png');}else{this.remove();}">`:''}<span class="play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span><span class="watchlbl">Watch recording in Linear ↗</span></a>${cap?`<figcaption>${cap}</figcaption>`:''}</figure>`;
+// CLIP: self-hosted muted looping screen recording (use if you prefer files over Loom/YouTube).
+const CLIP=(file,cap)=>`<figure class="media"><video src="media/${file}" muted loop autoplay playsinline onerror="this.closest('figure').classList.add('ph')"></video><div class="phbox"><span class="ic">CLIP</span><div>Save your screen recording as <span class="fn">media/${file}</span></div></div>${cap?`<figcaption>${cap}</figcaption>`:''}</figure>`;
+
+const NAV = [
+ {group:"Start", open:true, items:[
+   {id:"start", title:"Start here", html:`
+     <div class="hero">
+       <span class="wmark"><svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.629 0 24 5.372 24 11.991c0 3.704-1.678 7.017-4.318 9.218L2.886 4.18ZM1.058 6.513a11.945 11.945 0 0 0-.71 1.728l14.823 14.824a11.97 11.97 0 0 0 1.728-.71L1.058 6.513ZM.166 10.071a12.05 12.05 0 0 0-.16 1.984L11.945 23.994c.674-.005 1.338-.06 1.984-.16L.166 10.072ZM.005 13.793A12 12 0 0 0 10.207 23.995L.005 13.793Z"/></svg></span>
+       <div class="hbrand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-label="Linear logo"><path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.629 0 24 5.372 24 11.991c0 3.704-1.678 7.017-4.318 9.218L2.886 4.18ZM1.058 6.513a11.945 11.945 0 0 0-.71 1.728l14.823 14.824a11.97 11.97 0 0 0 1.728-.71L1.058 6.513ZM.166 10.071a12.05 12.05 0 0 0-.16 1.984L11.945 23.994c.674-.005 1.338-.06 1.984-.16L.166 10.072ZM.005 13.793A12 12 0 0 0 10.207 23.995L.005 13.793Z"/></svg></span><span class="wm">Linear</span></div>
+       <h1>Enablement Guide</h1>
+       <p>Everything you need to get productive in Linear, in one navigable place.</p>
+     </div>
+     <p><b>Read in three passes.</b> <b>Foundations</b> is for everyone on day one. <b>Key Workflows</b> walks the full lifecycle every piece of work follows — <b>Intake → Plan → Build → Review → Monitor</b> — and is where Linear's value compounds. <b>Role Tracks</b> map the specific workflows each function should standardize on.</p>
+     ${IMG("operating-layer.webp","Linear is the operating layer across your entire workflow — intake, plan, build, review, and monitor")}
+     ${CO("Need help?",`Post in the ${K("#linear-pilot")} Slack channel. For a live walkthrough, reference the recorded <b>Slack Enablement workshop</b>.`)}
+     <h2>Jump in</h2>
+     <div class="cards">
+       <div class="card" data-go="what"><div class="ttl">What is Linear?</div><div class="dsc">Why it matters for your workspace.</div></div>
+       <div class="card" data-go="setup"><div class="ttl">Team setup checklist</div><div class="dsc">Turn these on once, per team.</div></div>
+       <div class="card" data-go="intake"><div class="ttl">Intake &amp; triage</div><div class="dsc">Standardize intake fast.</div></div>
+       <div class="card" data-go="eng"><div class="ttl">Role tracks</div><div class="dsc">Workflows by function.</div></div>
+     </div>`},
+ ]},
+ {group:"Foundations", open:true, items:[
+   {id:"what", title:"What is Linear?", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">What Is Linear &amp; Why It Matters</h1>
+     <p class="lead">Navigate Linear and execute core workflows on day one.</p>
+     <p>Linear is a modern product planning and software development platform that combines issue tracking, project planning, and execution in one fast, opinionated experience. It's built on an AI-first vision for how software teams work, and is trusted by companies like OpenAI, Coinbase, Ramp, and Vercel.</p>
+     <h2>Why Linear for your workspace</h2>
+     <ul>
+       <li><b>Connects planning and execution.</b> One shared, real-time view of work across teams — no disconnect between the plan and what's actually shipping.</li>
+       <li><b>Built for speed.</b> A streamlined, opinionated UI removes friction and manual status updates.</li>
+       <li><b>Modern, AI-first workflows.</b> Native AI for triage, prioritization, and execution — not bolted-on complexity.</li>
+       <li><b>Designed for how teams work today.</b> Deep GitHub and Slack integrations keep conversations and work in sync.</li>
+     </ul>
+     ${CO("The goal:","Spend less time managing tools and process, and more time delivering high-impact work.")}`},
+   {id:"getting", title:"Getting started", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">Getting Started: Join, Invite &amp; Set Up Teams</h1>
+     <h2>Join the workspace</h2>
+     <ol><li>Go to ${K("linear.app/your-workspace")}.</li><li>Select <b>Continue with SAML SSO</b>.</li><li>Complete authentication in Okta.</li></ol>
+     ${IMG("login-in.webp","Choose “Continue with SAML SSO” on the Linear login screen","52.5%")}
+     ${CO("No Okta access?",`You may not be in the user group yet — post in ${K("#linear-pilot")} and tag the pilot lead.`)}
+     <h2>Invite team members</h2>
+     <ol><li>From your workspace, open <b>Members</b> in the sidebar (under ${K("… More")}).</li><li>Click <b>+ Invite</b> (top-right).</li><li>Enter one or more emails, separated by commas.</li><li>Pre-add users to their team(s) <b>and</b> to the ${K("Start Here")} team, then send.</li></ol>
+     <h2>Create or join a team</h2>
+     <p>Teams are groups of people who work together frequently; they contain issues and can be assigned to projects (${L("docs","https://linear.app/docs/teams")}).</p>
+     <ul><li>Check if a team exists via ${K("Teams")} in the sidebar; use ${K("Cmd + F")} to search the screen.</li><li>Create one with <b>+ New team</b>, or the ${K("+")} next to "Your teams."</li><li>Add members via Team settings (${K("…")} next to team name) → <b>Members</b> → <b>Add a member</b>.</li></ul>`},
+   {id:"setup", title:"Team setup checklist", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">Recommended Team Setup Checklist</h1>
+     <p class="lead">Every team ships with Issues, Projects, and Views boards. Turn on these settings once, at the team level, to unlock the key workflows.</p>
+     <table class="lt"><tr><th>Setting</th><th>What it does</th><th>Where to enable</th></tr>
+       <tr><td><b>Triage</b></td><td>A dedicated inbox for issues created by other teams or via integrations (e.g. Slack).</td><td>Team settings → ${K("Triage")} → enable</td></tr>
+       <tr><td><b>Cycles</b></td><td>Lightweight, automated sprints / time-boxed planning periods.</td><td>Team settings → ${K("Cycles")} → enable</td></tr>
+       <tr><td><b>Estimates</b></td><td>Adds an effort/points field to issues for capacity planning.</td><td>Team settings → ${K("General")} → ${K("Estimates")}</td></tr>
+       <tr><td><b>Issue statuses</b></td><td>Customize your team's workflow states and automations.</td><td>"Issue statuses &amp; automations"</td></tr>
+       <tr><td><b>Slack notifications</b></td><td>Route team activity to a chosen Slack channel.</td><td>Team settings → Slack notifications</td></tr>
+       <tr><td><b>AI / Agent guidance</b></td><td>Add prompts/guidance for AI features and connected agents.</td><td>Team settings → AI guidance</td></tr>
+     </table>
+     ${CO("Docs:",`${L("Triage","https://linear.app/docs/triage")} · ${L("Cycles","https://linear.app/docs/use-cycles")} · ${L("Estimates","https://linear.app/docs/estimates")} · ${L("Workflows","https://linear.app/docs/configuring-workflows")}`)}`},
+   {id:"nav", title:"Navigating Linear", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">Navigating Linear</h1>
+     <p>Linear uses a sidebar-first navigation model with four areas. Learning where things live is the fastest way to feel at home.</p>
+     ${IMG("navigating-sidebar.webp","The sidebar: Personal, Workspace, Favorites and Teams")}
+     <h2>Personal — your work</h2>
+     <ul><li><b>Inbox</b> — notifications, mentions, and updates that need your awareness or action.</li><li><b>My Issues</b> — every issue assigned to you, across all teams and projects.</li><li><b>Pulse</b> — a real-time activity feed showing what's changing across your work and teams. Great for staying aware without subscribing to everything.</li></ul>
+     <h2>Workspace — shared planning</h2>
+     <ul><li><b>Initiatives</b> — long-term strategic goals that group related projects.</li><li><b>Projects</b> — time-bound bodies of work with a clear outcome.</li><li><b>Views</b> — customizable saved filters across issues, projects, and teams.</li><li><b>Teams</b> — all teams in the pilot workspace.</li></ul>
+     <h2>Favorites &amp; Teams</h2>
+     <ul><li>Favorites is a quick-access area; click the star icon on any screen to add it. The bar supports foldering — hover ${K("Favorites")} and select the folder icon (${L("docs","https://linear.app/docs/favorites")}).</li><li>Your teams shows only teams you're a member of, to reduce noise. Explore other public teams via search or the ${K("+")} menu.</li></ul>
+     ${IMG("favorite.webp","Favorite anything with the star icon, then find it grouped under Favorites in the sidebar")}
+     <h2>Keyboard shortcuts</h2>
+     <ul><li>${K("Cmd + K")} opens the command menu (every action lives here).</li><li>${K("Cmd + /")} shows the full shortcut list.</li></ul>
+     ${CO("Pro tip:",`Right-click "open in new tab" doesn't work. Instead, hold ${K("Cmd")} (or ${K("Ctrl")} on Windows) and click any object to open it in a new tab.`)}`},
+   {id:"peoplehierarchy", title:"People hierarchy", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">Linear's People Hierarchy</h1>
+     <p>Before the work hierarchy, it helps to see how people are organized. A workspace contains teams, and teams own the work.</p>
+     ${IMG("people-hierarchy.webp","A workspace contains teams; teams own the work")}
+     <table class="lt"><tr><th>Level</th><th>What it is</th></tr>
+       <tr><td><b>Workspace</b></td><td>The home for all issues and interactions for an organization — the top of the hierarchy.</td></tr>
+       <tr><td><b>Team</b></td><td>Groups of people who work together frequently. In some cases you may choose to structure teams as parts of a product. Teams own the work (issues).</td></tr>
+     </table>`},
+   {id:"hierarchy", title:"Work hierarchy", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">Linear's Work Hierarchy</h1>
+     <p>Linear's model is intentionally simpler than Jira. There are three core tiers — Initiatives, Projects, and Issues — with optional sub-layers for deeper structure.</p>
+     ${IMG("work-hierarchy.webp","Initiatives contain Projects, which contain Issues")}
+     <table class="lt"><tr><th>Tier</th><th>What it is</th></tr>
+       <tr><td><b>Initiative</b></td><td>A large goal, objective, or program. Composed of many projects; gives leadership high-level visibility and progress roll-ups.</td></tr>
+       <tr><td>→ <b>Sub-Initiative</b></td><td>Nest initiatives up to 5 layers for complex planning.</td></tr>
+       <tr><td><b>Project</b></td><td>A feature launch or larger deliverable with a clear outcome and target date. Composed of issues; contributed to by many teams/users.</td></tr>
+       <tr><td>→ <b>Project Milestone</b></td><td>Key dates and work groupings within a project (e.g. CP dates, releases, phases).</td></tr>
+       <tr><td><b>Issue</b></td><td>Linear's atomic unit of work — a single task, owned by one team and assigned to one person, usually hours to a couple of days. Tightly integrated with GitHub PRs / Phabricator diffs.</td></tr>
+       <tr><td>→ <b>Sub-Issue</b></td><td>Sub-tasks used to break up an issue.</td></tr>
+     </table>`},
+   {id:"jira", title:"Coming from Jira", html:`
+     <p class="eyebrow">Foundations · 101</p><h1 class="title">Coming from Jira: Translation Map</h1>
+     <p>There's no exact 1-to-1 mapping. Use this as a starting point, then lean on the guidance below.</p>
+     <table class="lt"><tr><th>Jira work type</th><th>Linear object</th></tr>
+       <tr><td>Initiative / Theme</td><td>Initiative</td></tr><tr><td>Program</td><td>Sub-Initiative or Project</td></tr>
+       <tr><td>Epic</td><td>Project or Project Milestone</td></tr><tr><td>Story</td><td>Issue</td></tr>
+       <tr><td>Task</td><td>Issue or Sub-Issue</td></tr><tr><td>Bug</td><td>Issue</td></tr></table>
+     <h2>Guidance</h2>
+     <ul><li><b>Initiatives &amp; themes.</b> Map your programs/projects first — they reflect real progress. Then use initiatives to organize larger goals/OKRs, structured around the people who give updates or the views leadership wants.</li>
+     <li><b>Programs &amp; epics.</b> Map to projects and milestones. A project is the deliverable to ship; milestones are phases or key internal dates. Linear partitions work within a project by user by default, so no separate grouping object is needed.</li>
+     <li><b>Stories, tasks, bugs, spikes.</b> Everything is an issue or sub-issue with common fields. Keep items granular for daily progress, and classify/group/report using <b>labels</b> — far more structured than Jira tags.</li></ul>`},
+ ]},
+ {group:"Key Workflows", open:true, items:[
+   {id:"intake", title:"01 · Intake", html:`
+     <p class="eyebrow">Key Workflows · 01 Intake</p><h1 class="title">Intake</h1>
+     <p class="lead">How work reaches your team, how to review it in one place, and how to route it into your backlog or active execution.</p>
+     <p style="color:var(--muted);font-size:13px;margin-top:-14px">Last updated: June 2026 · Uber Linear pilot team</p>
+     <h2>Overview</h2>
+     <p>This guide covers how work reaches your team in Linear, how to review it in one place, and how to route it into your backlog or active execution. It covers your three main intake sources and two levels of triage setup — basic to get you running today, advanced to make the queue mostly self-managing over time.</p>
+     <h2>Your intake sources</h2>
+     <p>Linear consolidates incoming work from wherever your team already operates. Three sources apply to most teams.</p>
+     ${IMG("intake-flow.png","Intake flows from Slack, Jira, and other Linear teams into your triage queue, where Triage Intelligence routes it into ready, assigned work")}
+     <h3>Slack</h3>
+     <p>Mention ${K("@Linear")} in any Slack channel to create a Linear issue directly from a conversation. The agent reads the thread and creates a structured issue — title, description, and context — without you leaving Slack.</p>
+     <p>To set it up: run ${K("/invite @Linear")} in the channel once. After that, anyone can mention ${K("@Linear")} with a plain-English instruction.</p>
+     <p>Examples:</p>
+     <div class="pre">@Linear file this as a bug
+@Linear make issues from this thread
+@Linear create an issue and assign it to [name]</div>
+     ${IMG("intake-slack.webp","@Linear mentioned in a Slack thread, with the resulting Linear issue card shown in the thread reply")}
+     ${EMBED("https://www.youtube.com/watch?v=n30quJeLoYg","Creating an issue from a Slack thread with @Linear")}
+     <p>${L("Linear Agent in Slack ↗","https://linear.app/docs/slack#linear-agent-for-slack")}</p>
+     ${CO("High-volume intake?",`For helpdesk-style requests, set up <b>Asks</b> — form-based intake in a Slack channel. Submitters don't need a Linear license, and forms can carry templates and approvals (${L("Asks docs","https://linear.app/docs/linear-asks")}).`)}
+     <h3>Jira</h3>
+     <p>If your team has Jira sync configured, bugs and new issues created in your linked Jira project flow into your Linear triage queue automatically. No action needed after sync is set up — issues arrive on their own.</p>
+     <p>For full setup instructions and field mapping details, see the <b>Uber Jira Sync Guide</b> (internal). For a clean one-time cut-over instead of ongoing sync, use the Jira CLI importer to bulk-import issues, comments, and history (${L("Jira docs","https://linear.app/docs/jira")}).</p>
+     <h3>Other Linear teams</h3>
+     <p>Any Uber team in the Linear workspace can route an issue to your team by reassigning it. When they do, it lands directly in your triage queue. Nothing to configure on your end.</p>
+     <h2>Triage — basic setup</h2>
+     <h3>What triage is</h3>
+     <p>Triage is a dedicated incoming queue in Linear. When it is enabled, every new issue — from Slack, Jira, or another team — lands there first, before it goes anywhere else. One person on your team reviews the queue on rotation, decides what to do with each item, and routes it. Nothing gets lost in the backlog without being reviewed first.</p>
+     ${IMG("triage-queue.webp","The triage queue view showing a handful of incoming issues from different sources, with the right-side action panel visible")}
+     <h3>Step 1: Enable triage</h3>
+     <p>Settings → [Your Team] → ${K("Triage")} → toggle <b>Enable triage</b> on.</p>
+     <p>Once enabled, a Triage view appears in your left sidebar and all incoming issues land there by default instead of the backlog. (${L("Triage docs","https://linear.app/docs/triage")})</p>
+     <h3>Step 2: Set up a responsibility calendar</h3>
+     <p>Settings → [Your Team] → ${K("Triage")} → ${K("Responsibility")} tab → add team members and set a rotation cadence.</p>
+     <p>Weekly rotations work for most teams. The person on rotation gets notified when issues arrive and sees a reminder banner in their Linear sidebar. Their job is to review and route issues, not to resolve them.</p>
+     ${CO("What basic triage gets you:","Every issue your team receives is seen and acted on. One person is always clearly responsible for the queue. Nothing disappears into the backlog unreviewed.")}
+     <h2>Triage — advanced setup</h2>
+     <p>Run basic triage for one to two weeks first. Once you know what your intake looks like, these three additions make the queue mostly self-managing.</p>
+     <h3>Triage Rules</h3>
+     <p>Automated if/then logic that fires when an incoming issue matches a condition. Example: issues from your ${K("#bugs")} Slack channel automatically get labeled "bug" and set to High priority. Rules eliminate the most repetitive routing decisions so your triager focuses on judgment calls only.</p>
+     <p>Set up rules in Settings → [Your Team] → ${K("Triage")} → ${K("Rules")} tab. Start with one or two rules covering your highest-volume cases. (${L("Triage Rules docs","https://linear.app/docs/triage#triage-rules")})</p>
+     <h3>Guidance File</h3>
+     <p>A plain-language brief you write for Linear's AI that describes how your team thinks about incoming work. Example: "P0 means production is down for users. P1 means a core flow is broken. Route anything mentioning PagerDuty to the on-call engineer at Urgent priority."</p>
+     <p>The AI uses this to suggest labels, priorities, and assignees on every incoming issue. Write a rough version now and refine it after your first week of triage volume. Find it in Settings → [Your Team] → ${K("Triage")} → ${K("Agent")} tab. (${L("Triage Intelligence docs","https://linear.app/docs/triage-intelligence")})</p>
+     <h3>Agent Automations</h3>
+     <p>In the same ${K("Agent")} tab, you can enable AI-driven automations: auto-label, auto-assign, auto-prioritize, and duplicate detection. Enable these one at a time after the guidance file is in place.</p>
+     ${IMG("triage-ai-suggestions.webp","A triage issue open with an AI-suggested label and priority visible in the right panel")}
+     <h2>Routing issues from triage</h2>
+     <p>Once an issue lands in your triage queue, you have four actions available:</p>
+     <ul>
+       <li><b>Accept.</b> The issue is real, it belongs to your team, and it needs to be tracked. Accepting it moves it out of triage and into your team's active work. From here, see "Next steps" below.</li>
+       <li><b>Decline / Close.</b> The issue is out of scope, not actionable, or submitted in error. Close it and add a brief comment — especially if it came from another team or a non-Linear user who will receive a notification.</li>
+       <li><b>Redirect.</b> The issue belongs to a different team. Reassign it to the correct Linear team and it lands in their triage queue. No further action needed on your end.</li>
+       <li><b>Mark as Duplicate.</b> If the issue already exists elsewhere in your workspace, merge it with the original. Both will link to each other and the duplicate will close automatically.</li>
+     </ul>
+     <h3>Next steps after accepting</h3>
+     <p>When you accept an issue, it enters your team's tracked work. Where it goes from there depends on urgency and readiness:</p>
+     <ul>
+       <li><b>Add to backlog</b> — for real work that is not yet prioritized or sprint-ready. It lives in your team's backlog until an EM or triager pulls it into a cycle during planning.</li>
+       <li><b>Add to a cycle or project</b> — if it fits current sprint work or an active initiative, link it directly so it shows up in the right context immediately.</li>
+       <li><b>Hand off to an agent</b> — for issues that are well-scoped and ready to be worked, you can kick off a Linear Agent to start on it right away. This is most effective when the issue has a clear description and acceptance criteria.</li>
+     </ul>
+     ${CO("Next:",`The <b>Plan</b> and <b>Build</b> stages cover how to manage accepted issues through your execution workflow — cycles, project tracking, and working with agents.`)}
+     <h2>Related docs</h2>
+     <ul>
+       <li>${L("Linear Agent in Slack","https://linear.app/docs/slack#linear-agent-for-slack")}</li>
+       <li>${L("Triage","https://linear.app/docs/triage")}</li>
+       <li>${L("Triage Intelligence","https://linear.app/docs/triage-intelligence")}</li>
+       <li>${L("Jira Sync","https://linear.app/docs/jira")} · Uber Jira Sync Guide (internal)</li>
+     </ul>`},
+   {id:"plan", title:"02 · Plan", html:`
+     <p class="eyebrow">Key Workflows · 02 Plan</p><h1 class="title">Plan</h1>
+     <p class="lead">Two planning horizons: initiatives and projects for the long arc, cycles for the sprint — plus the labels, templates, and estimates that keep both clean.</p>
+     <p>Linear separates planning into two complementary verticals. <b>Initiative &amp; project planning</b> is the strategic, outcome-oriented horizon — what you're shipping and why. <b>Cycle planning</b> is the execution horizon — what the team commits to over the next one to two weeks. Accepted issues from Intake feed both.</p>
+     <h2>Vertical 1 — Initiative &amp; project planning</h2>
+     <p>Projects are how teams plan and ship larger deliverables. Each project has an owner, a target date, a status update cadence, and a set of issues partitioned by assignee. Status updates roll up automatically to the parent initiative, giving leadership a live picture without manual reporting.</p>
+     <ol><li>Create a project with a clear outcome and target date.</li><li>Break the work into issues; group key dates with milestones.</li><li>Assign issues to owners — work is partitioned by user automatically.</li><li>Post regular status updates; these roll up to the initiative and executive views.</li></ol>
+     <p>Use <b>initiatives</b> (nestable up to 5 layers) to organize OKRs and programs above projects, structured around the people who give updates or the views leadership wants.</p>
+     ${CO("Video:",L("Project Planning &amp; Tracking walkthrough","https://www.youtube.com/watch?v=JLpDL7x50hA"))}
+     <h2>Vertical 2 — Cycle (sprint) planning</h2>
+     ${IMG("cycle-dashboard.webp","A cycle's automated scope and completion dashboard")}
+     <p>Cycles are Linear's take on sprints — time-boxed periods with a lighter planning weight and more automation. They're off by default; enable via Team settings → ${K("Cycles")} (${L("docs","https://linear.app/docs/use-cycles")}).</p>
+     <ul><li>How long each cycle lasts, and an optional cooldown period between cycles.</li><li>Start date (cycles begin 12:00am that day in the team's local time).</li><li>How many cycles to create in advance (sets how far ahead you can attribute issues).</li><li>Optional automations to keep cycles up to date — recommended.</li></ul>
+     <p>Once running, the Cycles dashboard reports automatically on current and changing scope, progress, and completion rates.</p>
+     ${CO("Pro tip:",`In a Cycle view, open the <b>Cycle Details</b> page (top-right, or ${K("Cmd + I")}) for quick per-user filters — very handy for jumping between people's work during stand-ups.`)}
+     <h2>Planning foundations</h2>
+     <p>Three settings keep both planning horizons clean and reportable.</p>
+     <h3>Labels &amp; classification</h3>
+     ${IMG("label-groups.webp","A single-select label group (e.g. Work Type) on an issue")}
+     <p>Linear uses <b>labels</b> instead of Jira custom fields. New labels default to the team level; a <b>workspace label</b> works across every team (convert via team settings → Issue labels → <b>Move to workspace</b>). A <b>label group</b> allows only a single label from the group to be selected — ideal for mutually exclusive categories like "Work Type" (bug vs feature vs chore). Project labels are separate and always shared workspace-wide (${L("docs","https://linear.app/docs/labels")}).</p>
+     <h3>Templates &amp; standardization</h3>
+     ${IMG("issue-template.webp","An issue template with prefilled structure, labels and fields")}
+     <p>Templates make good process the path of least resistance. Standardize <b>issue templates</b> (bugs, incident reports), <b>project templates</b> (milestones, default views, required fields), and <b>document templates</b> (PRDs, decision logs, retros) for cleaner data and consistent reporting.</p>
+     <h3>Effort estimation</h3>
+     <p>Estimation is off by default. Enable via Team settings → ${K("General")} → ${K("Estimates")}, then pick a scale. An Estimate field then appears on issues, plus Estimate/Effort options in view filters, display, and Insights slices.</p>
+     ${CO("Recommendation:","Keep issues small — favor the low end of the scale. Granular issues give cleaner daily progress and more reliable forecasting.")}
+     <h2>Team pages &amp; documents</h2>
+     <p>Each team has a home for its boards plus the documents that describe how the team works — keeping specs, decision logs, and briefs next to the work they govern.</p>
+     ${VIDEO("team-page-recording.mp4","team-page-recording.webp","Walkthrough: team pages & documents in Linear","https://share.linear.app/GDNrttCp")}`},
+   {id:"build", title:"03 · Build", html:`
+     <p class="eyebrow">Key Workflows · 03 Build</p><h1 class="title">Build</h1>
+     <p class="lead">Three ways work gets built in Linear: the traditional engineering loop wired to GitHub, the MCP server for AI assistants, and managed agents that take issues directly.</p>
+     <h2>Traditional engineering workflow</h2>
+     <p>The native GitHub integration links planning and execution so issues update automatically as PRs move (${L("docs","https://linear.app/docs/github-integration")}). Start from the issue and connect a branch:</p>
+     ${EMBED("https://www.loom.com/share/998864c37d1f4f9c9f1b529524b61db3","Linking a pull request to a Linear issue")}
+     <ul><li><b>Branch name.</b> From the issue, copy the Git branch name (top-right, or ${K("Cmd + Shift + .")}) and check it out.</li>
+     <li><b>Issue ID.</b> Copy the ID with ${K("Cmd + .")} and paste it into the PR title or description.</li>
+     <li><b>Magic words.</b> Add a magic word + issue ID in the PR description/title to auto-close on merge (${L("docs","https://linear.app/docs/github#link-through-pull-requests")}).</li></ul>
+     ${CO("Phabricator:",`No direct integration during the pilot — your org is moving teams toward GitHub. As a workaround, use the Jira ticket synced to a Linear issue to create or link a diff.`)}
+     <h3>Design context</h3>
+     ${IMG("figma-preview.webp","A Figma frame previewed inside a Linear issue")}
+     <p>Paste a Figma link into an issue to unfurl a live preview that stays current as the design changes, so engineering and design share one source of truth (${L("Figma docs","https://linear.app/docs/figma")}).</p>
+     <h2>MCP server</h2>
+     <p>Linear's MCP (Model Context Protocol) server lets AI assistants — Claude, Cursor, ChatGPT — interact directly with your workspace: find, create, and update issues, projects, comments, milestones, and initiatives (${L("docs","https://linear.app/docs/mcp")}).</p>
+     ${IMG("mcp-claude-linear.webp","Claude using the Linear MCP server to read and update issues")}
+     <ul><li><b>Claude (web).</b> Settings → Integrations → Add more → name ${K("Linear")}, URL ${K("https://mcp.linear.app/mcp")}.</li>
+     <li><b>Claude Desktop.</b> Add the ${K("mcp-remote")} config below to ${K("claude_desktop_config.json")}, then restart.</li></ul>
+     <div class="pre">{ "mcpServers": { "linear": { "command": "npx", "args": ["-y", "mcp-remote", "https://mcp.linear.app/mcp"] } } }</div>
+     <ul><li><b>Claude Code.</b> Run ${K("claude mcp add --transport sse linear-server https://mcp.linear.app/mcp")}, then ${K("/mcp")} to authenticate.</li></ul>
+     <h2>Managed &amp; partner agents</h2>
+     <p>The <b>Linear Agent</b> <span class="tag">Beta</span> lives in a toolbar in the bottom-right of your workspace — it gathers context across teams, summarizes projects, drafts PRDs, and breaks work into issues.</p>
+     ${IMG("linear-agent-toolbar.webp","The Linear Agent toolbar in the bottom-right")}
+     <p><b>Partner agents</b> act as first-class members — assign an agent an issue (handed off straight from Intake) and it works in the background, posting progress and PRs. Integrates with Cursor, Copilot, Codex, Devin, Warp, Sentry, and more.</p>
+     ${EMBED("https://www.youtube.com/watch?v=B3uHgSV6ocA","Assigning an issue to a partner agent")}
+     <p>Enable via Settings → Integrations → Agents → install from the ${L("agents directory","https://linear.app/integrations/agents")}.</p>
+     ${CO("Build your own:",`The Linear for Agents platform is open — agents you build can be @mentioned and assigned issues like any member. Set up an OAuth app in "app" actor mode with ${K("app:mentionable")} and ${K("app:assignable")} scopes, then use the GraphQL API and webhooks. ${L("Developer docs","https://linear.app/developers/agents")}`)}`},
+   {id:"review", title:"04 · Review", html:`
+     <p class="eyebrow">Key Workflows · 04 Review</p><h1 class="title">Review</h1>
+     <p class="lead">As PRs move, issues update themselves. Build views to see what's in review, blocked, or ready to merge.</p>
+     <h2>PR automations &amp; diff integration</h2>
+     <p>Once an issue is linked to a PR (see <b>Build</b>), the GitHub integration drives status automatically — the issue advances as the PR opens, gets reviewed, and merges, removing manual status work and giving product, engineering, and leadership shared context.</p>
+     <ul><li><b>Auto status sync.</b> PR opened → In Progress; review requested → In Review; merged → Done (configurable per team in issue statuses &amp; automations).</li>
+     <li><b>Diffs in Linear.</b> Linked diffs and review threads surface on the issue, so you can see what changed without leaving the work item.</li>
+     <li><b>Magic words.</b> A magic word + issue ID in the PR closes the issue on merge automatically.</li></ul>
+     <h2>Views, filters &amp; dependencies</h2>
+     ${IMG("views-filters.webp","A saved view filtered by label, showing blocking relations")}
+     <p>Views visualize work as Lists, Kanban boards, or Gantt-style timelines (${L("docs","https://linear.app/docs/custom-views")}). For review specifically, build saved views that surface the state of in-flight work:</p>
+     <ul><li>Filter by status to build an <b>In Review</b> board the team works from daily.</li>
+     <li>Use issue relations to mark <b>blocking / blocked-by</b> dependencies, then filter or sort to surface what's unblocked and ready to merge.</li>
+     <li>Favorite a view with the star icon, and use the bell icon to push it to a Slack channel for add/complete/past-due alerts.</li></ul>
+     ${CO("Pro tip:","Build a 'Ready to merge / unblocked' view once, favorite it, and wire it to Slack so reviewers stay current without asking.")}`},
+   {id:"monitor", title:"05 · Monitor", html:`
+     <p class="eyebrow">Key Workflows · 05 Monitor</p><h1 class="title">Monitor</h1>
+     <p class="lead">Turn live issue data into self-serve reporting — insights, dashboards, and saved views, no exports or manual roll-ups.</p>
+     <h2>Insights &amp; dashboards</h2>
+     <p>Insights turn your live issue data into self-serve reporting. Build dashboards for the metrics each team and leader cares about, then revisit them on a recurring cadence.</p>
+     <ul><li>Throughput and cycle efficiency — how much is shipping and how quickly.</li><li>Workload and outliers — where work is concentrated or stuck.</li><li>Scope and completion — for cycles, projects, and initiatives.</li><li>Team and executive dashboards for retros and KPI monitoring.</li></ul>
+     ${CO("Video:",L("Insights &amp; Dashboards walkthrough","https://www.youtube.com/watch?v=9CcONYjfSms"))}
+     <h2>Views as monitoring surfaces</h2>
+     <p>Beyond dashboards, saved views are the lightweight way to keep a finger on health. Build a view once — filtered by status, label, assignee, or dependency — favorite it, and subscribe it to a Slack channel so status flows without a status meeting.</p>
+     <ul><li>At-risk view: projects past target date or with stalled status updates.</li>
+     <li>Initiative roll-ups: track delivery across projects through automatic status roll-ups — no manual chasing.</li>
+     <li>Executive views: push the leadership view to a Slack channel on a recurring cadence.</li></ul>
+     ${CO("Pro tip:","Pair an Insights dashboard for the numbers with a saved 'at-risk' view for the specifics — leaders get both the trend and the exceptions in one glance.")}`},
+ ]},
+ {group:"Role Tracks", open:true, items:[
+   {id:"eng", title:"Engineering", html:roleHTML("Engineering","Own triage, keep code and work in sync, and let automation handle status.",
+     [["Triage ownership.","Run the team Triage inbox with AI Triage Intelligence suggesting routing, duplicates, and labels."],
+      ["GitHub automations &amp; PR sync.","Link issues to PRs via branch name, issue ID, or magic words so status updates itself."],
+      ["Cycle execution.","Plan in cycles; use Cycle Details for stand-ups and the dashboard for scope/completion."],
+      ["Coding agents.","Assign issues to partner agents (Cursor, Codex, Devin) or your own OAuth-based agents."]],
+     ["Enable Triage, Cycles, and Estimates; customize issue statuses to match your workflow.","Connect GitHub and the team Slack channel; install relevant agents from the directory."],
+     "Adopt magic words in PR descriptions team-wide — it eliminates nearly all manual status updates.")},
+   {id:"em", title:"Engineering Manager", html:roleHTML("Engineering Manager","Steer delivery at the project and initiative level — health, throughput, and unblocking.",
+     [["Initiative &amp; project oversight.","Track delivery across projects through initiative roll-ups and project status updates — no manual status chasing."],
+      ["Cycle &amp; team health.","Monitor cycle scope, completion, and workload across the team to spot risk early."],
+      ["Cross-team dependencies.","Surface blocking / blocked-by relations spanning projects so you can clear the critical path."],
+      ["Reporting up.","Use Insights dashboards and executive views to report delivery to leadership."]],
+     ["Define initiative ownership and a project status-update cadence with named owners.","Build team and executive Insights dashboards (throughput, cycle efficiency, workload), plus saved views for at-risk and unblocked work."],
+     "Subscribe key project and initiative views to a leadership Slack channel — status flows without a status meeting.")},
+   {id:"pm", title:"Product Management", html:roleHTML("Product Management","Structure initiatives, standardize planning, and report without spreadsheets.",
+     [["Initiative structure.","Organize OKRs/programs as initiatives (nested up to 5 layers) with automatic roll-ups to leadership."],
+      ["Cycle &amp; backlog planning.","Run planning in cycles and keep the backlog clean with labels and templates."],
+      ["Decision logs &amp; PRDs.","Write documents in Linear, linked to the projects and issues they govern."],
+      ["Analytics.","Build Insights dashboards for throughput, scope, and completion; review on a recurring cadence."]],
+     ["Define the initiative → project → milestone model and an update cadence with named owners.","Create issue, project, and PRD templates; agree on a label taxonomy before launch."],
+     "Use the MCP server to draft project updates and create issues straight from meeting notes.")},
+   {id:"tpm", title:"Technical Program Manager", html:roleHTML("Technical Program Manager (TPM)","Coordinate cross-team programs from initiatives down to projects and milestones.",
+     [["Program structure.","Model programs as initiatives (nested up to 5 layers) that span multiple teams and projects."],
+      ["Milestones &amp; dependencies.","Coordinate cross-team milestones and track blocking relations end-to-end across the program."],
+      ["Risk &amp; status roll-ups.","Maintain decision logs, risks, and executive roll-ups from initiatives down to each project."],
+      ["Cross-functional intake.","Route incoming program requests through Triage and Asks so nothing falls through."]],
+     ["Stand up the initiative → project → milestone model with owners and a defined update cadence.","Create project templates with required milestones and fields; build cross-team timeline (Gantt) and at-risk dashboard views."],
+     "Use the Linear Agent or MCP server to draft weekly program updates and roll status up from project updates automatically.")},
+   {id:"design", title:"Design", html:roleHTML("Design","Organize projects, link assets, and keep handoffs clean.",
+     [["Project organization.","Track design work as projects/issues alongside engineering for shared visibility."],
+      ["Asset linking.","Attach specs and design files to issues so context travels with the work."],
+      ["Handoffs.","Use milestones and statuses to signal ready-for-dev and review states."]],
+     ["Set up a design team with its own views (e.g. by status, by project).","Adopt issue templates for design requests with required fields."],
+     "Favorite the views you live in and group them in a Favorites folder for one-click access.")},
+   {id:"cx", title:"CX / Support", html:roleHTML("CX / Support","Capture customer signal and close the loop from feedback to delivery.",
+     [["Customer Requests intake.","Set a default team and route requests to issues, preserving the request-to-issue link."],
+      ["Asks in Slack.","Stand up form-based intake so anyone can file a request without a Linear license."],
+      ["Trend dashboards.","Build Insights views on request trends and product intelligence."]],
+     ["Configure intake sources and default routing; enable Triage with SLAs.","Optionally import customers and requests via CSV (Linear-run)."],
+     "A closed loop — from feedback collection to planning to delivery — is the whole point; wire requests to the projects that act on them.")},
+   {id:"ops", title:"Ops / Marketing / HR", html:roleHTML("Ops / Marketing / HR","Run lightweight intake and projects without heavyweight process.",
+     [["Asks forms.","Use Slack Asks for cross-functional requests (legal, brand, people ops) with templates and approvals."],
+      ["Lightweight projects.","Manage launches and campaigns as projects with milestones and simple views."],
+      ["Reporting.","Standardize templates and use views/dashboards for status without manual decks."]],
+     ["Create an intake team with Asks channels, templates, and routing by severity/component/impact.","Use project templates to standardize recurring launches."],
+     "Asks triggers can be initiated from Slack emojis via workflow builder — a near-zero-friction way to file requests.")},
+ ]},
+ {group:"Reference", open:true, items:[
+   {id:"resources", title:"Additional resources", html:`
+     <p class="eyebrow">Reference</p><h1 class="title">Additional Resources</h1>
+     <h2>Linear docs</h2>
+     <ul><li>${L("Start Guide","https://linear.app/docs/start-guide")} · ${L("The Linear Method","https://linear.app/method")} · ${L("Feature Docs","https://linear.app/docs")} · ${L("Changelog","https://linear.app/changelog")}</li>
+     <li>${L("GraphQL API","https://linear.app/developers/graphql")} · ${L("MCP Server","https://linear.app/docs/mcp")} · ${L("Agents","https://linear.app/developers/agents")}</li></ul>
+     <h2>Videos &amp; case studies</h2>
+     <ul><li>${L("Linear YouTube channel","https://www.youtube.com/@linear")}</li>
+     <li>Customers: ${L("All","https://linear.app/customers")} · ${L("OpenAI","https://linear.app/customers/openai")} · ${L("Ramp","https://linear.app/customers/ramp")} · ${L("Brex","https://linear.app/customers/brex")} · ${L("Scale AI","https://linear.app/customers/scale")}</li></ul>
+     ${CO("Source:",`This guide consolidates your workspace's Linear onboarding and enablement materials.`)}`},
+ ]},
+];
+
+function roleHTML(title, sub, workflows, setup, tip){
+  const wl = workflows.map(w=>`<li><b>${w[0]}</b> ${w[1]}</li>`).join("");
+  const sl = setup.map(s=>`<li>${s}</li>`).join("");
+  return `<p class="eyebrow">Role Track</p><h1 class="title">${title}</h1><p class="lead">${sub}</p>
+    <h2>Key workflows</h2><ul>${wl}</ul>
+    <h2>Recommended setup</h2><ul>${sl}</ul>
+    ${CO("Pro tip:",tip)}`;
+}
+
+// ---------------- Render ----------------
+const flat=[]; NAV.forEach(g=>g.items.forEach(it=>flat.push({...it, group:g.group})));
+const nav=document.getElementById("nav");
+const content=document.getElementById("content");
+
+NAV.forEach((g,gi)=>{
+  const grp=document.createElement("div"); grp.className="grp"+(g.open?"":" collapsed");
+  const btn=document.createElement("button");
+  btn.innerHTML=`<span>${g.group}</span><span class="chev">▾</span>`;
+  btn.onclick=()=>{ grp.classList.toggle("collapsed"); sizeItems(grp); };
+  const box=document.createElement("div"); box.className="items";
+  g.items.forEach(it=>{
+    const a=document.createElement("button"); a.className="item"; a.textContent=it.title; a.dataset.id=it.id;
+    a.onclick=()=>{ go(it.id); closeMobile(); };
+    box.appendChild(a);
+    const sec=document.createElement("section"); sec.className="panel"; sec.id="p-"+it.id; sec.innerHTML=it.html;
+    content.appendChild(sec);
+  });
+  grp.appendChild(btn); grp.appendChild(box); nav.appendChild(grp);
+});
+function sizeItems(grp){ const box=grp.querySelector(".items"); box.style.maxHeight=grp.classList.contains("collapsed")?"0px":box.scrollHeight+"px"; }
+document.querySelectorAll(".grp").forEach(sizeItems);
+
+let cur=null;
+function go(id){
+  const i=flat.findIndex(x=>x.id===id); if(i<0) return;
+  cur=i;
+  document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+  document.getElementById("p-"+id).classList.add("active");
+  document.querySelectorAll(".item").forEach(a=>a.classList.toggle("active",a.dataset.id===id));
+  // ensure parent group open
+  const activeItem=document.querySelector('.item[data-id="'+id+'"]');
+  const grp=activeItem.closest(".grp"); if(grp.classList.contains("collapsed")){grp.classList.remove("collapsed"); sizeItems(grp);}
+  document.getElementById("crumb").innerHTML=`${flat[i].group} &nbsp;›&nbsp; <b>${flat[i].title}</b>`;
+  document.getElementById("prev").disabled=i===0;
+  document.getElementById("next").disabled=i===flat.length-1;
+  window.scrollTo({top:0,behavior:"instant"});
+  document.querySelector(".main").scrollTo?.({top:0});
+  try{ history.replaceState(null,"","#"+id); }catch(e){ location.hash=id; }
+}
+document.getElementById("prev").onclick=()=>{ if(cur>0) go(flat[cur-1].id); };
+document.getElementById("next").onclick=()=>{ if(cur<flat.length-1) go(flat[cur+1].id); };
+
+// card jump links
+content.addEventListener("click",e=>{ const c=e.target.closest("[data-go]"); if(c) go(c.dataset.go); });
+
+// search
+document.getElementById("q").addEventListener("input",e=>{
+  const term=e.target.value.trim().toLowerCase();
+  flat.forEach(it=>{
+    const el=document.querySelector('.item[data-id="'+it.id+'"]');
+    const hit=!term || it.title.toLowerCase().includes(term) || it.html.toLowerCase().includes(term) || it.group.toLowerCase().includes(term);
+    el.classList.toggle("hidden",!hit);
+  });
+  document.querySelectorAll(".grp").forEach(grp=>{
+    const any=[...grp.querySelectorAll(".item")].some(a=>!a.classList.contains("hidden"));
+    grp.style.display=any?"":"none";
+    if(any&&term){grp.classList.remove("collapsed"); sizeItems(grp);}
+  });
+});
+
+// mobile
+const side=document.getElementById("side"), scrim=document.getElementById("scrim");
+document.getElementById("menu").onclick=()=>{ side.classList.toggle("open"); scrim.classList.toggle("show"); };
+scrim.onclick=closeMobile;
+function closeMobile(){ side.classList.remove("open"); scrim.classList.remove("show"); }
+
+// init
+const start=(location.hash||"#start").slice(1);
+go(flat.some(x=>x.id===start)?start:"start");
+</script>
+</body>
+</html>
