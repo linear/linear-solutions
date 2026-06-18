@@ -1,0 +1,58 @@
+{
+  "_comment": "Issue Lock Agent — freezes an issue once it reaches a locked status. Copy this to config.json and edit.",
+
+  "lockedStatuses": [
+    "Ready for Deployment",
+    "Closed",
+    "Cancelled"
+  ],
+
+  "_lockedStatusTypes_comment": "Optional. Lock by Linear workflow state TYPE as well as name. Types: backlog, unstarted, started, completed, canceled, triage. e.g. ['completed','canceled'] locks every Done/Cancelled-style status regardless of its custom name.",
+  "lockedStatusTypes": [],
+
+  "monitoredFields": [
+    "title",
+    "description",
+    "priority",
+    "estimate",
+    "assignee",
+    "labels",
+    "state",
+    "dueDate"
+  ],
+
+  "_allowlist_comment": "Users / teams permitted to edit a locked issue (admins, release managers). A group can reference a Linear team by key (e.g. 'REL') or UUID — every team member is then authorized. Leave empty to lock the issue for everyone except the agent.",
+  "allowlist": [
+    {
+      "name": "Release Managers",
+      "linearTeamId": "REL",
+      "members": [
+        { "email": "release-admin@yourcompany.com", "name": "Release Admin" }
+      ]
+    },
+    {
+      "email": "workspace-admin@yourcompany.com",
+      "name": "Workspace Admin"
+    }
+  ],
+
+  "agent": {
+    "name": "Issue Lock Agent",
+    "identifier": "🔒 [LOCK]"
+  },
+  "slack": {
+    "enabled": false,
+    "channelId": "C0123456789"
+  },
+  "behavior": {
+    "dryRun": false,
+    "notifyOnly": false,
+    "mentionUser": true,
+    "announceLock": true
+  },
+  "logging": {
+    "level": "info",
+    "auditTrail": true,
+    "auditLogPath": "./logs/audit.log"
+  }
+}
