@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linear OAuth Token Refresh Demo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181b;
+    --surface2: #1f1f23;
+    --border: #2a2a30;
+    --text: #e4e4e7;
+    --muted: #71717a;
+    --accent: #5e6ad2;
+    --accent-dim: rgba(94,106,210,0.15);
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.12);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 24px;
+  }
+
+  header {
+    max-width: 1400px;
+    margin: 0 auto 28px;
+  }
+
+  .header-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  header span.subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  .intro {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+    max-width: 900px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .workspace {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .ws-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ws-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ws-badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--mono);
+  }
+
+  .ws-badge.devtoken {
+    background: var(--amber-dim);
+    color: var(--amber);
+    border: 1px solid rgba(245,158,11,0.2);
+  }
+
+  .ws-badge.oauth {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid rgba(94,106,210,0.2);
+  }
+
+  .ws-badge.clientcredentials {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+
+  .ws-title h2 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.3s;
+  }
+
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .ws-body { padding: 20px; }
+
+  .not-connected {
+    text-align: center;
+    padding: 24px 12px;
+  }
+
+  .not-connected p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  .token-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .token-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .token-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .token-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .token-ttl {
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .token-ttl.ok { background: var(--green-dim); color: var(--green); }
+  .token-ttl.warn { background: var(--amber-dim); color: var(--amber); }
+  .token-ttl.expired { background: var(--red-dim); color: var(--red); }
+
+  .token-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+    margin-bottom: 6px;
+  }
+
+  .token-expiry {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--surface2);
+    color: var(--text);
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn:hover { border-color: #3a3a42; background: #252529; }
+
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .btn.primary:hover { background: #6b75e0; }
+
+  .btn.success {
+    background: var(--green-dim);
+    border-color: rgba(34,197,94,0.3);
+    color: var(--green);
+  }
+
+  .btn.success:hover { background: rgba(34,197,94,0.2); }
+
+  .btn.danger {
+    background: var(--red-dim);
+    border-color: rgba(239,68,68,0.3);
+    color: var(--red);
+  }
+
+  .btn.danger:hover { background: rgba(239,68,68,0.2); }
+
+  .btn.warning {
+    background: var(--amber-dim);
+    border-color: rgba(245,158,11,0.3);
+    color: var(--amber);
+  }
+
+  .btn.warning:hover { background: rgba(245,158,11,0.2); }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .log-section { margin-top: 4px; }
+
+  .log-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+
+  .log {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    height: 180px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  .log:empty::before {
+    content: "No events yet.";
+    color: var(--muted);
+  }
+
+  .log-entry {
+    display: flex;
+    gap: 10px;
+    padding: 2px 0;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg { color: var(--text); }
+
+  .devtoken-card {
+    background: var(--surface2);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .devtoken-card .token-label { color: var(--amber); }
+
+  .clientcredentials-card {
+    background: var(--surface2);
+    border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .clientcredentials-card .token-label { color: var(--green); }
+
+  .hint {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border-radius: 6px;
+    border-left: 3px solid var(--border);
+  }
+
+  .hint strong { color: var(--text); }
+  .hint.oauth { border-left-color: var(--accent); }
+  .hint.clientcredentials { border-left-color: var(--green); }
+
+  .hint code {
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  @media (max-width: 1100px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <svg class="logo" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="6" fill="#5e6ad2"/>
+      <path d="M7 21L21 7M7 7h14v14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h1>Linear OAuth Token Demo <span class="subtitle">reference app</span></h1>
+  </div>
+  <p class="intro">
+    Three authentication patterns for Linear integrations. The <strong style="color:var(--text)">OAuth</strong> column shows refresh-token renewal after a user install.
+    The <strong style="color:var(--text)">Client Credentials</strong> column shows server-to-server token renewal — fetch a new token programmatically when the current one expires or returns 401.
+    See README.md for setup and copy-paste examples.
+  </p>
+</header>
+
+<div class="grid">
+  <div class="workspace" id="ws-devtoken">
+    <div class="ws-header">
+      <div class="ws-title">
+        <div class="status-dot" id="dot-devtoken"></div>
+        <h2>Developer Token</h2>
+        <span class="ws-badge devtoken">local dev</span>
+      </div>
+    </div>
+    <div class="ws-body" id="body-devtoken"></div>
+  </div>
+
+  <div class="workspace" id="ws-oauth">
+    <div class="ws-header">
+      <div class="ws-title">
+        <div class="status-dot" id="dot-oauth"></div>
+        <h2>OAuth App</h2>
+        <span class="ws-badge oauth">auth code flow</span>
+      </div>
+    </div>
+    <div class="ws-body" id="body-oauth"></div>
+  </div>
+
+  <div class="workspace" id="ws-clientcredentials">
+    <div class="ws-header">
+      <div class="ws-title">
+        <div class="status-dot" id="dot-clientcredentials"></div>
+        <h2>Client Credentials</h2>
+        <span class="ws-badge clientcredentials">server-to-server</span>
+      </div>
+    </div>
+    <div class="ws-body" id="body-clientcredentials"></div>
+  </div>
+</div>
+
+<script>
+const state = { devtoken: null, oauth: null, clientcredentials: null };
+
+const es = new EventSource("/events");
+es.addEventListener("tokens", e => {
+  const d = JSON.parse(e.data);
+  state[d.workspace] = d.state;
+  render(d.workspace);
+});
+es.addEventListener("log", e => {
+  const { workspace, entry } = JSON.parse(e.data);
+  if (state[workspace]) {
+    state[workspace].log = state[workspace].log || [];
+    state[workspace].log.unshift(entry);
+  }
+  appendLog(workspace, entry);
+});
+
+fetch("/state").then(r => r.json()).then(data => {
+  state.devtoken = data.devtoken;
+  state.oauth = data.oauth;
+  state.clientcredentials = data.clientcredentials;
+  render("devtoken");
+  render("oauth");
+  render("clientcredentials");
+});
+
+function render(workspace) {
+  const s = state[workspace];
+  if (!s) return;
+  const dot = document.getElementById(`dot-${workspace}`);
+  dot.className = "status-dot" + (s.connected ? " connected" : "");
+
+  const body = document.getElementById(`body-${workspace}`);
+  if (workspace === "devtoken") renderDevToken(body, s);
+  else if (workspace === "oauth") renderOAuth(body, s);
+  else renderClientCredentials(body, s);
+}
+
+function renderDevToken(body, s) {
+  if (!s.connected) {
+    body.innerHTML = `
+      <div class="not-connected">
+        <p>Paste a developer token from your OAuth app settings page.<br>Good for prototyping — no refresh mechanism.</p>
+        <input id="dev-token-input" type="text" placeholder="lin_api_..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:12px;margin-bottom:10px;outline:none;"/>
+        <button class="btn primary" onclick="storeDevToken()">Store dev token</button>
+      </div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="token-grid">
+      <div class="devtoken-card">
+        <div class="token-card-header">
+          <span class="token-label">Developer Token</span>
+          <span class="token-ttl warn">30 days · static</span>
+        </div>
+        <div class="token-value">${s.accessToken}</div>
+        <div class="token-expiry">Expires: ${formatDate(s.accessExpiry)}</div>
+      </div>
+      <div class="hint">
+        <strong>No refresh path.</strong> When this token expires, generate a new one manually from your OAuth app settings.
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="apiCall('devtoken')">Simulate API call</button>
+      <button class="btn danger" onclick="disconnect('devtoken')">Disconnect</button>
+    </div>
+    <div class="log-section">
+      <div class="log-label">Event log</div>
+      <div class="log" id="log-devtoken">${renderLog(s.log)}</div>
+    </div>`;
+}
+
+function renderOAuth(body, s) {
+  if (!s.connected) {
+    body.innerHTML = `
+      <div class="not-connected">
+        <p>Install your OAuth app into any Linear workspace.<br>A workspace admin authorizes once — your server handles token refresh from there.</p>
+        <a href="/install" class="btn primary">Install OAuth app</a>
+      </div>
+      <div class="hint oauth" style="margin-top:16px;text-align:left;">
+        <strong>User install required.</strong> Store access token (24hr) + refresh token (30-day). Renew with <code>grant_type=refresh_token</code>.
+      </div>`;
+    return;
+  }
+
+  const accessStatus = tokenStatus(s.accessExpiry);
+  const refreshStatus = tokenStatus(s.refreshExpiry);
+
+  body.innerHTML = `
+    <div class="token-grid">
+      <div class="token-card">
+        <div class="token-card-header">
+          <span class="token-label">Access Token</span>
+          <span class="token-ttl ${accessStatus.cls}" id="access-ttl-oauth">${accessStatus.label}</span>
+        </div>
+        <div class="token-value">${s.accessToken}</div>
+        <div class="token-expiry">Expires: ${formatDate(s.accessExpiry)}</div>
+      </div>
+      <div class="token-card">
+        <div class="token-card-header">
+          <span class="token-label">Refresh Token</span>
+          <span class="token-ttl ${refreshStatus.cls}">${refreshStatus.label}</span>
+        </div>
+        <div class="token-value">${s.refreshToken}</div>
+        <div class="token-expiry">Expires: ${formatDate(s.refreshExpiry)} · rotates on each use</div>
+      </div>
+      <div class="hint oauth">
+        <strong>Automatic refresh:</strong> POST <code>/oauth/token</code> with <code>grant_type=refresh_token</code>. Persist both the new access token and new refresh token.
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="apiCall('oauth')">Simulate API call</button>
+      <button class="btn warning" onclick="forceExpire('oauth')">Force expire access token</button>
+      <button class="btn danger" onclick="disconnect('oauth')">Disconnect</button>
+    </div>
+    <div class="log-section">
+      <div class="log-label">Event log</div>
+      <div class="log" id="log-oauth">${renderLog(s.log)}</div>
+    </div>`;
+
+  startCountdown("oauth", s.accessExpiry);
+}
+
+function renderClientCredentials(body, s) {
+  if (!s.connected) {
+    body.innerHTML = `
+      <div class="not-connected">
+        <p>Fetch an app actor token using your client ID and secret.<br>No browser install — ideal for CI, cron jobs, and internal services.</p>
+        <button class="btn success" onclick="fetchClientCredentials()">Fetch client credentials token</button>
+      </div>
+      <div class="hint clientcredentials" style="margin-top:16px;text-align:left;">
+        <strong>Prerequisite:</strong> Enable "Client credentials tokens" on your OAuth app in Linear settings before fetching.
+      </div>`;
+    return;
+  }
+
+  const accessStatus = tokenStatus(s.accessExpiry, true);
+
+  body.innerHTML = `
+    <div class="token-grid">
+      <div class="clientcredentials-card">
+        <div class="token-card-header">
+          <span class="token-label">App Actor Access Token</span>
+          <span class="token-ttl ${accessStatus.cls}" id="access-ttl-clientcredentials">${accessStatus.label}</span>
+        </div>
+        <div class="token-value">${s.accessToken}</div>
+        <div class="token-expiry">Expires: ${formatDate(s.accessExpiry)} · no refresh token</div>
+      </div>
+      <div class="hint clientcredentials">
+        <strong>Renewal pattern:</strong> There is no refresh token. When expired (or on 401), POST <code>/oauth/token</code> again with <code>grant_type=client_credentials</code> to get a new access token.
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="apiCall('clientcredentials')">Simulate API call</button>
+      <button class="btn warning" onclick="forceExpire('clientcredentials')">Force expire access token</button>
+      <button class="btn success" onclick="fetchClientCredentials()">Fetch new token</button>
+      <button class="btn danger" onclick="disconnect('clientcredentials')">Disconnect</button>
+    </div>
+    <div class="log-section">
+      <div class="log-label">Event log</div>
+      <div class="log" id="log-clientcredentials">${renderLog(s.log)}</div>
+    </div>`;
+
+  startCountdown("clientcredentials", s.accessExpiry, true);
+}
+
+function renderLog(entries) {
+  if (!entries || !entries.length) return "";
+  return entries.map(e => `
+    <div class="log-entry">
+      <span class="log-time">${formatTime(e.time)}</span>
+      <span class="log-msg">${e.message}</span>
+    </div>`).join("");
+}
+
+function appendLog(workspace, entry) {
+  const el = document.getElementById(`log-${workspace}`);
+  if (!el) return;
+  const div = document.createElement("div");
+  div.className = "log-entry";
+  div.innerHTML = `<span class="log-time">${formatTime(entry.time)}</span><span class="log-msg">${entry.message}</span>`;
+  el.prepend(div);
+}
+
+function tokenStatus(expiry, longLived = false) {
+  if (!expiry) return { cls: "expired", label: "expired" };
+  const ms = new Date(expiry) - Date.now();
+  if (ms <= 0) return { cls: "expired", label: "expired" };
+  const days = ms / (24 * 3600000);
+  if (longLived) {
+    if (days < 1) return { cls: "warn", label: `${Math.ceil(ms / 3600000)}h` };
+    return { cls: "ok", label: `${Math.floor(days)}d remaining` };
+  }
+  const hrs = ms / 3600000;
+  if (hrs < 1) return { cls: "warn", label: `${Math.ceil(ms / 60000)}m` };
+  if (hrs < 4) return { cls: "warn", label: `${Math.floor(hrs)}h ${Math.floor((ms % 3600000) / 60000)}m` };
+  return { cls: "ok", label: `${Math.floor(hrs)}h remaining` };
+}
+
+function startCountdown(workspace, expiry, longLived = false) {
+  const el = document.getElementById(`access-ttl-${workspace}`);
+  if (!el || !expiry) return;
+  clearInterval(window[`_cd_${workspace}`]);
+  window[`_cd_${workspace}`] = setInterval(() => {
+    if (!document.getElementById(`access-ttl-${workspace}`)) {
+      clearInterval(window[`_cd_${workspace}`]);
+      return;
+    }
+    const s = tokenStatus(expiry, longLived);
+    const el = document.getElementById(`access-ttl-${workspace}`);
+    if (el) { el.textContent = s.label; el.className = `token-ttl ${s.cls}`; }
+  }, 10000);
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString();
+}
+
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString();
+}
+
+async function storeDevToken() {
+  const input = document.getElementById("dev-token-input");
+  const token = input?.value?.trim();
+  if (!token) return;
+  await fetch("/store-dev-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+}
+
+async function fetchClientCredentials() {
+  await fetch("/fetch-client-credentials", { method: "POST" });
+}
+
+async function forceExpire(workspace) {
+  await fetch(`/force-expire/${workspace}`, { method: "POST" });
+}
+
+async function apiCall(workspace) {
+  await fetch(`/api-call/${workspace}`, { method: "POST" });
+}
+
+async function disconnect(workspace) {
+  await fetch(`/disconnect/${workspace}`, { method: "POST" });
+}
+</script>
+</body>
+</html>
