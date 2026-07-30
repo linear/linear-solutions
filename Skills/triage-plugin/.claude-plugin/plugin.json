@@ -1,0 +1,21 @@
+{
+  "name": "linear-triage",
+  "version": "0.1.0",
+  "description": "Claude Code plugin that polls a Linear team's triage queue for issues labeled 'Claude Code', then implements each one end-to-end (branch, PR, tests, status updates).",
+  "author": {
+    "name": "Shannon Hu",
+    "email": "shannon.hu@linear.app"
+  },
+  "homepage": "https://github.com/shannonhu/linear-triage-plugin",
+  "license": "MIT",
+  "keywords": ["linear", "triage", "automation", "agent"],
+  "skills": [
+    "skills/linear-triage-setup",
+    "skills/linear-triage-poller",
+    "skills/linear-issue-worker"
+  ],
+  "requirements": {
+    "mcp": ["claude_ai_Linear"],
+    "cli": ["gh", "git"]
+  }
+}
