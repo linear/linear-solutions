@@ -21,6 +21,7 @@ Restart Claude Code (or open a new session) so the skill list is re-scanned. Inv
 | Skill | What it does |
 |---|---|
 | [stale-labels](./stale-labels/SKILL.md) | Audits a Linear team's labels and produces a tiered cleanup report (unused / low-use & stale / legacy) based on issue count and most-recent application date. Read-only. |
+| [triage-plugin](./triage-plugin/README.md) | A Claude Code plugin that polls a Linear triage queue for issues labeled "Claude Code" and implements each end-to-end — worktree, draft PR, tests, and status updates posted back to the issue. Auth is delegated to the `gh` CLI and the Linear MCP; no secrets are stored in the plugin. |
 
 ## Contributing a new skill
 
