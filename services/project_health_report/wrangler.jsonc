@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "graphing-project-health-report",
+  "compatibility_date": "2026-05-22",
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
+}
