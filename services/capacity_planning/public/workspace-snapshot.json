@@ -1,0 +1,2977 @@
+{
+  "timestamp": "2026-02-28T20:10:31.695Z",
+  "teams": [
+    {
+      "id": "0b4426cc-1c45-49f4-900b-a0233d59e84b",
+      "name": "Rider App SubTeam Test",
+      "issueEstimationType": "exponential",
+      "members": {
+        "nodes": [
+          {
+            "id": "4fb8afb0-c2bb-4f0a-8585-b5453c6ab1f9",
+            "name": "Melissa",
+            "email": "melissa@linear.app"
+          },
+          {
+            "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+            "name": "Lauren",
+            "email": "lauren@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ec4509a6-41dd-48b7-8e98-34271ce26792",
+      "name": "OURA Test",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "4fb8afb0-c2bb-4f0a-8585-b5453c6ab1f9",
+            "name": "Melissa",
+            "email": "melissa@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "67ffdbd0-73ef-4026-a880-1d7b1008ffe0",
+      "name": "James Account Plan",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "8d374591-4446-4d65-8b79-d4f353000229",
+      "name": "QA",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "30bdf357-6f6f-4978-ba78-04e22e86220c",
+      "name": "Feedback Test",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "668f3c93-48e8-49a2-bfa2-22d57b501135",
+      "name": "RFC Team",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "af8b6def-f6fb-4cf3-8357-01c941e82e4a",
+            "name": "Ben",
+            "email": "ben@linear.app"
+          },
+          {
+            "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+            "name": "Lauren",
+            "email": "lauren@linear.app"
+          },
+          {
+            "id": "b1b14052-b9a4-4d1e-a871-5eecaa945f81",
+            "name": "Tyler",
+            "email": "tyler@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ea611d34-5204-4fb1-9e61-c57596fd9789",
+      "name": "Mingjira",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "ca7eefad-d75b-473c-8c9f-9019a48ac8d1",
+            "name": "Mingjie",
+            "email": "mingjie@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2d1d0bf2-5a04-46d3-ad01-43e23d2f6345",
+      "name": "Damco",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "03d3b997-438a-4f8d-b1d8-94493c527328",
+            "name": "Alexandra",
+            "email": "alexandra@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "523deb89-7565-40f4-b497-1f7abf486d16",
+      "name": "Team Example",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "71e3d1a9-53ba-46ba-9654-eec5c018bece",
+      "name": "Delivery",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "2e517da7-9cad-41fe-9f1b-0f057fc759f2",
+      "name": "Approval",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "b1b14052-b9a4-4d1e-a871-5eecaa945f81",
+            "name": "Tyler",
+            "email": "tyler@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "9f1104b0-0a3b-4189-9ff8-13becf70b02d",
+      "name": "Agents",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "46c9eb38-1ce4-4b48-b12c-426d5acca817",
+            "name": "Karri",
+            "email": "karri@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "64f5934a-3484-44bb-bd7f-485674f84cff",
+      "name": "VIP Ops",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "48e9fa1c-e1f8-4d47-b20f-be62c9c09c83",
+      "name": "Security - Vulnerabilities",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "c4e9229f-83df-4a32-a22d-5c378ead3214",
+      "name": "Agent UI Roast",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "8abe129a-5a57-4703-9c95-3265185193a1",
+            "name": "Ryan",
+            "email": "ryan@linear.app"
+          },
+          {
+            "id": "aa47f536-0efc-42bc-b0c5-af38552ab54d",
+            "name": "Charlie",
+            "email": "charlie@linear.app"
+          },
+          {
+            "id": "409aa6e8-ddfd-45d4-b8c0-b0c5f20b3321",
+            "name": "Warp",
+            "email": "d9b516a1-04f6-4662-ad94-565c1860f2d9@oauthapp.linear.app"
+          },
+          {
+            "id": "53bf85ae-c84b-446b-8cab-05b4181ae4b6",
+            "name": "Cyrus",
+            "email": "2902b10a-8454-4907-8670-4767dab347ff@oauthapp.linear.app"
+          },
+          {
+            "id": "4f28f4e8-8708-4518-802d-2dc679f72fdc",
+            "name": "Factory",
+            "email": "32620278-3ad5-4ca3-b0ab-40adf0f14a74@oauthapp.linear.app"
+          },
+          {
+            "id": "ef888acc-64d3-4c1c-8182-5bde04ed00b4",
+            "name": "Tembo",
+            "email": "d5731e6b-6007-42a4-bcdb-825445ff3853@oauthapp.linear.app"
+          },
+          {
+            "id": "ca7eefad-d75b-473c-8c9f-9019a48ac8d1",
+            "name": "Mingjie",
+            "email": "mingjie@linear.app"
+          },
+          {
+            "id": "ccd5c970-d87b-4392-b445-1ff1131e15d5",
+            "name": "ChatPRD",
+            "email": "95052b7d-5887-4936-9658-e8ffc49d233d@oauthapp.linear.app"
+          },
+          {
+            "id": "6d43fd85-2550-4320-beb8-e6c09ed72363",
+            "name": "Stilla",
+            "email": "f390025a-b70e-48b0-befe-788be09e0cbf@oauthapp.linear.app"
+          },
+          {
+            "id": "863dcb1b-4171-4bb5-bb1c-32143ff8a24d",
+            "name": "OpenAI",
+            "email": "c240558d-ec62-4b54-a678-9bf7b3c1c8e5@oauthapp.linear.app"
+          },
+          {
+            "id": "43f03d9f-cc8d-467e-9c35-50c064126e11",
+            "name": "Ranger",
+            "email": "05c9317a-c8b6-4790-b34d-69400cb04595@oauthapp.linear.app"
+          },
+          {
+            "id": "46c9eb38-1ce4-4b48-b12c-426d5acca817",
+            "name": "Karri",
+            "email": "karri@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4554d0f-94dc-4e41-81b9-1c8f51a64e40",
+      "name": "Jira Import Test",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "33a64b9f-2fc9-4a1f-b951-ca739c1cb0fe",
+      "name": "Cyrus Demo",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "53bf85ae-c84b-446b-8cab-05b4181ae4b6",
+            "name": "Cyrus",
+            "email": "2902b10a-8454-4907-8670-4767dab347ff@oauthapp.linear.app"
+          },
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "37fb9940-2200-4e83-afcf-e87ddda2e2dd",
+            "name": "Steven",
+            "email": "steven@linear.app"
+          },
+          {
+            "id": "ca7eefad-d75b-473c-8c9f-9019a48ac8d1",
+            "name": "Mingjie",
+            "email": "mingjie@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1778ad10-7271-412a-b1a4-6affcfa01ce8",
+      "name": "Steven's Test Team2",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "37fb9940-2200-4e83-afcf-e87ddda2e2dd",
+            "name": "Steven",
+            "email": "steven@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "3dd7ca44-b353-4bf9-adf8-ecd8ca1683fa",
+      "name": "Feature Requests (Enterprise)",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b7e9f44a-a93e-4539-8181-cc4ddcac6094",
+      "name": "Steven's Team",
+      "issueEstimationType": "tShirt",
+      "members": {
+        "nodes": [
+          {
+            "id": "37fb9940-2200-4e83-afcf-e87ddda2e2dd",
+            "name": "Steven",
+            "email": "steven@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "996677dc-ecad-4060-87fc-a918cf660290",
+      "name": "Legal Portal",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "80d7665b-f8f8-42b2-8491-b213b0a77709",
+      "name": "Weyland-Yutani",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "3fdec724-2d82-482b-b9b8-ed4f15cc4a39",
+      "name": "Linear Surf Team",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "0458d971-a05f-44a3-94c1-e5fa91d2d609",
+            "name": "Logan",
+            "email": "logan@linear.app"
+          },
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "2f606892-0222-4d5e-9aea-0e4cc10496f9",
+            "name": "Dylan",
+            "email": "dylan@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "93fa5246-e0a2-4c13-80ca-246790b2cc57",
+      "name": "ImpactExpress",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "fbe82371-eea4-4aa3-94ca-f65f5639b25d",
+            "name": "Luke",
+            "email": "luke@linear.app"
+          },
+          {
+            "id": "b1b14052-b9a4-4d1e-a871-5eecaa945f81",
+            "name": "Tyler",
+            "email": "tyler@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+      "name": "Engineering",
+      "issueEstimationType": "tShirt",
+      "members": {
+        "nodes": [
+          {
+            "id": "fcc31731-35cb-4ec0-9ebe-0b79985b2d5c",
+            "name": "Lukas Eipert",
+            "email": "lukas@linear.app"
+          },
+          {
+            "id": "5172cff9-dddf-41ae-bb81-b36e381c313e",
+            "name": "Daniel",
+            "email": "daniel@linear.app"
+          },
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "30c0294b-c41e-45a8-894f-127b17ef33ae",
+            "name": "Rutan",
+            "email": "colin.rutan@linear.app"
+          },
+          {
+            "id": "6aa4eb70-8562-43d6-ab1c-193566cad923",
+            "name": "Robb",
+            "email": "robb@linear.app"
+          },
+          {
+            "id": "0e047b9b-3dc6-46e0-8ee7-23b5112b908a",
+            "name": "Warner",
+            "email": "warner@linear.app"
+          },
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "e7533b92-14e2-4593-aac9-0781dd870150",
+            "name": "Anthony",
+            "email": "anthony@linear.app"
+          },
+          {
+            "id": "1debec5d-ac63-40db-a7b0-af027a1e4345",
+            "name": "Meg",
+            "email": "meg@linear.app"
+          },
+          {
+            "id": "37fb9940-2200-4e83-afcf-e87ddda2e2dd",
+            "name": "Steven",
+            "email": "steven@linear.app"
+          },
+          {
+            "id": "bba679bc-8fb4-4bff-8869-247e5b46e11e",
+            "name": "Sid",
+            "email": "sid@linear.app"
+          },
+          {
+            "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+            "name": "Lauren",
+            "email": "lauren@linear.app"
+          },
+          {
+            "id": "396d5a0f-0a2c-4dd2-92e3-110a9f517d07",
+            "name": "Lena",
+            "email": "lena@linear.app"
+          },
+          {
+            "id": "c374b91b-bf4c-4b76-8a41-558cfbb25060",
+            "name": "Julian",
+            "email": "julian@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "19b7f155-0888-42e7-bab7-a7eef13cf25c",
+      "name": "Data",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "1debec5d-ac63-40db-a7b0-af027a1e4345",
+            "name": "Meg",
+            "email": "meg@linear.app"
+          },
+          {
+            "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+            "name": "Erin",
+            "email": "erin@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "76259ca8-23bb-4f1b-a1b3-0bef00e6779b",
+      "name": "Legal",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "35463994-9feb-4e0d-9942-ea2200bd6970",
+      "name": "Operations",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "aadc2e40-a4d1-4561-a32b-4b222cc92536",
+            "name": "Hilary",
+            "email": "hilary@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          },
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "73615e23-c4d5-4e9c-9d6b-4ed21798224c",
+      "name": "Marketing Analytics",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "520118fd-c7cd-4505-9471-87eb9ddef8c7",
+            "name": "Grace",
+            "email": "grace@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2c75d808-e939-4e0b-bc4b-d99f276856ae",
+      "name": "IT & Security Operations",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "af8b6def-f6fb-4cf3-8357-01c941e82e4a",
+            "name": "Ben",
+            "email": "ben@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          },
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "deef6856-f582-430c-95c8-21ba2a9b67a5",
+      "name": "Service Requests",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "b43dfe2d-98c6-4898-816c-9d3f4d6ee7f9",
+      "name": "Product Backlog",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "e0030947-222a-4401-b686-d9e3e3ad8ad9",
+            "name": "Okay",
+            "email": "hi@okaysee.com"
+          }
+        ]
+      }
+    },
+    {
+      "id": "01bfd83d-e782-4ec9-813a-716dcb43d872",
+      "name": "Releases",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "0458d971-a05f-44a3-94c1-e5fa91d2d609",
+            "name": "Logan",
+            "email": "logan@linear.app"
+          },
+          {
+            "id": "0e047b9b-3dc6-46e0-8ee7-23b5112b908a",
+            "name": "Warner",
+            "email": "warner@linear.app"
+          },
+          {
+            "id": "bba679bc-8fb4-4bff-8869-247e5b46e11e",
+            "name": "Sid",
+            "email": "sid@linear.app"
+          },
+          {
+            "id": "55b821d2-44dd-48ab-83a5-eded7468b737",
+            "name": "Mel",
+            "email": "mel@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "3729b046-c3c5-4810-b646-d1f16b04b968",
+      "name": "Enterprise Playbook",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "18ac8a46-ed28-44db-9fc1-dbe16f0ced8d",
+      "name": "Customer Success",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b6a6ac17-a31d-4d02-add1-d1cff42f2e86",
+      "name": "Implementation Team",
+      "issueEstimationType": "tShirt",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "30363d9e-5c14-432c-9c71-eb1deea8927b",
+      "name": "Enterprise Delivery",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "d0db3e5d-c165-47df-8b3b-b7777400a73e",
+            "name": "Ema",
+            "email": "ema@linear.app"
+          },
+          {
+            "id": "bba679bc-8fb4-4bff-8869-247e5b46e11e",
+            "name": "Sid",
+            "email": "sid@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f5b9bffc-d41f-4f13-ac63-f29d1f58be44",
+      "name": "Triage Intake",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "d6458b56-871b-49c8-ac64-5ee9dca56ff9",
+      "name": "Fleet Partner Platform",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "1debec5d-ac63-40db-a7b0-af027a1e4345",
+            "name": "Meg",
+            "email": "meg@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cb3175b5-cd7e-46d0-8806-90b96a420b65",
+      "name": "Onboarding",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "29e2bfdf-f58a-4812-a13a-e420ab231111",
+      "name": "Product Marketing",
+      "issueEstimationType": "linear",
+      "members": {
+        "nodes": [
+          {
+            "id": "fcc31731-35cb-4ec0-9ebe-0b79985b2d5c",
+            "name": "Lukas Eipert",
+            "email": "lukas@linear.app"
+          },
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "be2cc64e-32af-4b39-a939-6935185d3a7b",
+            "name": "Quinn",
+            "email": "zenith.quinn@gmail.com"
+          },
+          {
+            "id": "80ae8022-8441-47e1-bfed-35192bf2cf1b",
+            "name": "Brian",
+            "email": "brian@linear.app"
+          },
+          {
+            "id": "02a4af28-4279-498e-b2ac-c15f09828545",
+            "name": "Simone",
+            "email": "simone@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          },
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          },
+          {
+            "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+            "name": "Erin",
+            "email": "erin@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "8fc0aafe-f21b-4f9b-acb5-46b12c7090d9",
+      "name": "Erin",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+            "name": "Erin",
+            "email": "erin@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "61c9dd90-efc5-4240-9983-1ee44a318eee",
+      "name": "Rideshare Agents",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "1b4e91fa-87dc-451d-b5dc-451d61cfc770",
+            "name": "shannonhu519@gmail.com",
+            "email": "shannonhu519@gmail.com"
+          },
+          {
+            "id": "37fb9940-2200-4e83-afcf-e87ddda2e2dd",
+            "name": "Steven",
+            "email": "steven@linear.app"
+          },
+          {
+            "id": "be2cc64e-32af-4b39-a939-6935185d3a7b",
+            "name": "Quinn",
+            "email": "zenith.quinn@gmail.com"
+          },
+          {
+            "id": "cccda331-40bc-40dd-b350-7e0e0b70fae4",
+            "name": "Brad",
+            "email": "brad@linear.app"
+          },
+          {
+            "id": "bba679bc-8fb4-4bff-8869-247e5b46e11e",
+            "name": "Sid",
+            "email": "sid@linear.app"
+          },
+          {
+            "id": "ccd5c970-d87b-4392-b445-1ff1131e15d5",
+            "name": "ChatPRD",
+            "email": "95052b7d-5887-4936-9658-e8ffc49d233d@oauthapp.linear.app"
+          },
+          {
+            "id": "43f03d9f-cc8d-467e-9c35-50c064126e11",
+            "name": "Ranger",
+            "email": "05c9317a-c8b6-4790-b34d-69400cb04595@oauthapp.linear.app"
+          },
+          {
+            "id": "80ae8022-8441-47e1-bfed-35192bf2cf1b",
+            "name": "Brian",
+            "email": "brian@linear.app"
+          },
+          {
+            "id": "7025f249-1b36-49c2-8468-a92dc719ee2e",
+            "name": "Nan",
+            "email": "erin.m.frey@gmail.com"
+          },
+          {
+            "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+            "name": "Erin",
+            "email": "erin@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a1fe32c9-73c5-4165-be46-23e7422da5e6",
+      "name": "playground sub 1",
+      "issueEstimationType": "fibonacci",
+      "members": {
+        "nodes": [
+          {
+            "id": "ca7eefad-d75b-473c-8c9f-9019a48ac8d1",
+            "name": "Mingjie",
+            "email": "mingjie@linear.app"
+          },
+          {
+            "id": "6a1034dc-6c9c-4541-ba1c-f66ba32fc962",
+            "name": "Guillaume",
+            "email": "guillaume@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+      "name": "Design",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "e7533b92-14e2-4593-aac9-0781dd870150",
+            "name": "Anthony",
+            "email": "anthony@linear.app"
+          },
+          {
+            "id": "bba679bc-8fb4-4bff-8869-247e5b46e11e",
+            "name": "Sid",
+            "email": "sid@linear.app"
+          },
+          {
+            "id": "e256ac70-8d15-49d7-ac49-84e53cb9f799",
+            "name": "Conor",
+            "email": "conor@linear.app"
+          },
+          {
+            "id": "46c9eb38-1ce4-4b48-b12c-426d5acca817",
+            "name": "Karri",
+            "email": "karri@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "d956f618-3092-44bb-b8dd-de4f62ffba03",
+      "name": "Core services",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "8bd54407-4dd0-489d-b83e-5da045df658b",
+            "name": "Emma",
+            "email": "emma@linear.app"
+          },
+          {
+            "id": "fbe82371-eea4-4aa3-94ca-f65f5639b25d",
+            "name": "Luke",
+            "email": "luke@linear.app"
+          },
+          {
+            "id": "e7533b92-14e2-4593-aac9-0781dd870150",
+            "name": "Anthony",
+            "email": "anthony@linear.app"
+          },
+          {
+            "id": "1debec5d-ac63-40db-a7b0-af027a1e4345",
+            "name": "Meg",
+            "email": "meg@linear.app"
+          },
+          {
+            "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+            "name": "Erin",
+            "email": "erin@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "9fbfb417-846c-4de1-931a-f4e206f16d20",
+      "name": "Android",
+      "issueEstimationType": "fibonacci",
+      "members": {
+        "nodes": [
+          {
+            "id": "0dd08f49-8f77-48a0-b93a-b84c7d0c0ccc",
+            "name": "Laeka Brenninkmeyer",
+            "email": "laeka@linear.app"
+          },
+          {
+            "id": "0458d971-a05f-44a3-94c1-e5fa91d2d609",
+            "name": "Logan",
+            "email": "logan@linear.app"
+          },
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "ed27f045-7d7a-4ebf-a5c0-f8468d5f52a4",
+            "name": "Liam",
+            "email": "liam@linear.app"
+          },
+          {
+            "id": "c9ff39cd-124a-4b43-97cc-09b100ca0117",
+            "name": "Chris",
+            "email": "chris.maggio@linear.app"
+          },
+          {
+            "id": "30c0294b-c41e-45a8-894f-127b17ef33ae",
+            "name": "Rutan",
+            "email": "colin.rutan@linear.app"
+          },
+          {
+            "id": "0e047b9b-3dc6-46e0-8ee7-23b5112b908a",
+            "name": "Warner",
+            "email": "warner@linear.app"
+          },
+          {
+            "id": "b31077da-fe51-4962-99f6-24827cf2b2c2",
+            "name": "Megan",
+            "email": "brian+alt@linear.app"
+          },
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "af8b6def-f6fb-4cf3-8357-01c941e82e4a",
+            "name": "Ben",
+            "email": "ben@linear.app"
+          },
+          {
+            "id": "e7533b92-14e2-4593-aac9-0781dd870150",
+            "name": "Anthony",
+            "email": "anthony@linear.app"
+          },
+          {
+            "id": "520118fd-c7cd-4505-9471-87eb9ddef8c7",
+            "name": "Grace",
+            "email": "grace@linear.app"
+          },
+          {
+            "id": "8285484a-db68-4753-a8bd-a2ae87a1d49f",
+            "name": "Kyle",
+            "email": "kyle@linear.app"
+          },
+          {
+            "id": "80ae8022-8441-47e1-bfed-35192bf2cf1b",
+            "name": "Brian",
+            "email": "brian@linear.app"
+          },
+          {
+            "id": "4fb8afb0-c2bb-4f0a-8585-b5453c6ab1f9",
+            "name": "Melissa",
+            "email": "melissa@linear.app"
+          },
+          {
+            "id": "d2f9c47e-d158-46db-a1bd-2081dfaf6305",
+            "name": "Jesse",
+            "email": "jesse@linear.app"
+          },
+          {
+            "id": "f5c25451-35d6-4ac0-b469-7e142fa58c8e",
+            "name": "Gino",
+            "email": "gino@linear.app"
+          },
+          {
+            "id": "2f606892-0222-4d5e-9aea-0e4cc10496f9",
+            "name": "Dylan",
+            "email": "dylan@linear.app"
+          },
+          {
+            "id": "55b821d2-44dd-48ab-83a5-eded7468b737",
+            "name": "Mel",
+            "email": "mel@linear.app"
+          },
+          {
+            "id": "02a4af28-4279-498e-b2ac-c15f09828545",
+            "name": "Simone",
+            "email": "simone@linear.app"
+          },
+          {
+            "id": "12e039df-e8ca-45d8-83c5-79afbca4a753",
+            "name": "Allie",
+            "email": "allie@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          },
+          {
+            "id": "22a07cb7-13f9-4340-ad8a-5a91407bded0",
+            "name": "Jack",
+            "email": "jack@linear.app"
+          },
+          {
+            "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+            "name": "Sarah",
+            "email": "sarah@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "d2540382-3d86-4ce0-b524-707bc4ebc983",
+      "name": "iOS",
+      "issueEstimationType": "tShirt",
+      "members": {
+        "nodes": [
+          {
+            "id": "0dd08f49-8f77-48a0-b93a-b84c7d0c0ccc",
+            "name": "Laeka Brenninkmeyer",
+            "email": "laeka@linear.app"
+          },
+          {
+            "id": "0458d971-a05f-44a3-94c1-e5fa91d2d609",
+            "name": "Logan",
+            "email": "logan@linear.app"
+          },
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "ed27f045-7d7a-4ebf-a5c0-f8468d5f52a4",
+            "name": "Liam",
+            "email": "liam@linear.app"
+          },
+          {
+            "id": "c9ff39cd-124a-4b43-97cc-09b100ca0117",
+            "name": "Chris",
+            "email": "chris.maggio@linear.app"
+          },
+          {
+            "id": "30c0294b-c41e-45a8-894f-127b17ef33ae",
+            "name": "Rutan",
+            "email": "colin.rutan@linear.app"
+          },
+          {
+            "id": "0e047b9b-3dc6-46e0-8ee7-23b5112b908a",
+            "name": "Warner",
+            "email": "warner@linear.app"
+          },
+          {
+            "id": "b31077da-fe51-4962-99f6-24827cf2b2c2",
+            "name": "Megan",
+            "email": "brian+alt@linear.app"
+          },
+          {
+            "id": "af8b6def-f6fb-4cf3-8357-01c941e82e4a",
+            "name": "Ben",
+            "email": "ben@linear.app"
+          },
+          {
+            "id": "e7533b92-14e2-4593-aac9-0781dd870150",
+            "name": "Anthony",
+            "email": "anthony@linear.app"
+          },
+          {
+            "id": "1debec5d-ac63-40db-a7b0-af027a1e4345",
+            "name": "Meg",
+            "email": "meg@linear.app"
+          },
+          {
+            "id": "217e1c71-fa03-4395-b64f-f8e6f9d2f3aa",
+            "name": "Romain",
+            "email": "romain@linear.app"
+          },
+          {
+            "id": "520118fd-c7cd-4505-9471-87eb9ddef8c7",
+            "name": "Grace",
+            "email": "grace@linear.app"
+          },
+          {
+            "id": "8285484a-db68-4753-a8bd-a2ae87a1d49f",
+            "name": "Kyle",
+            "email": "kyle@linear.app"
+          },
+          {
+            "id": "80ae8022-8441-47e1-bfed-35192bf2cf1b",
+            "name": "Brian",
+            "email": "brian@linear.app"
+          },
+          {
+            "id": "4fb8afb0-c2bb-4f0a-8585-b5453c6ab1f9",
+            "name": "Melissa",
+            "email": "melissa@linear.app"
+          },
+          {
+            "id": "d2f9c47e-d158-46db-a1bd-2081dfaf6305",
+            "name": "Jesse",
+            "email": "jesse@linear.app"
+          },
+          {
+            "id": "f5c25451-35d6-4ac0-b469-7e142fa58c8e",
+            "name": "Gino",
+            "email": "gino@linear.app"
+          },
+          {
+            "id": "2f606892-0222-4d5e-9aea-0e4cc10496f9",
+            "name": "Dylan",
+            "email": "dylan@linear.app"
+          },
+          {
+            "id": "55b821d2-44dd-48ab-83a5-eded7468b737",
+            "name": "Mel",
+            "email": "mel@linear.app"
+          },
+          {
+            "id": "02a4af28-4279-498e-b2ac-c15f09828545",
+            "name": "Simone",
+            "email": "simone@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          },
+          {
+            "id": "22a07cb7-13f9-4340-ad8a-5a91407bded0",
+            "name": "Jack",
+            "email": "jack@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7e9f91c4-d583-4142-8fec-80db0fbf0b4f",
+      "name": "Playground",
+      "issueEstimationType": "fibonacci",
+      "members": {
+        "nodes": [
+          {
+            "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+            "name": "Craig",
+            "email": "craig@linear.app"
+          },
+          {
+            "id": "ed27f045-7d7a-4ebf-a5c0-f8468d5f52a4",
+            "name": "Liam",
+            "email": "liam@linear.app"
+          },
+          {
+            "id": "c9ff39cd-124a-4b43-97cc-09b100ca0117",
+            "name": "Chris",
+            "email": "chris.maggio@linear.app"
+          },
+          {
+            "id": "0e047b9b-3dc6-46e0-8ee7-23b5112b908a",
+            "name": "Warner",
+            "email": "warner@linear.app"
+          },
+          {
+            "id": "7ebc4f82-db20-4665-835d-72aacf1d1037",
+            "name": "Eitan",
+            "email": "eitan@linear.app"
+          },
+          {
+            "id": "aadc2e40-a4d1-4561-a32b-4b222cc92536",
+            "name": "Hilary",
+            "email": "hilary@linear.app"
+          },
+          {
+            "id": "bd4970ee-0293-4478-99af-2715076a74f2",
+            "name": "Bojan",
+            "email": "bojan@linear.app"
+          },
+          {
+            "id": "520118fd-c7cd-4505-9471-87eb9ddef8c7",
+            "name": "Grace",
+            "email": "grace@linear.app"
+          },
+          {
+            "id": "ca7eefad-d75b-473c-8c9f-9019a48ac8d1",
+            "name": "Mingjie",
+            "email": "mingjie@linear.app"
+          },
+          {
+            "id": "c33aaf83-81f9-4554-85a8-886c4c62f715",
+            "name": "Lauren G",
+            "email": "lgrant1286@gmail.com"
+          },
+          {
+            "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+            "name": "Lauren",
+            "email": "lauren@linear.app"
+          },
+          {
+            "id": "d2f9c47e-d158-46db-a1bd-2081dfaf6305",
+            "name": "Jesse",
+            "email": "jesse@linear.app"
+          },
+          {
+            "id": "f5c25451-35d6-4ac0-b469-7e142fa58c8e",
+            "name": "Gino",
+            "email": "gino@linear.app"
+          },
+          {
+            "id": "6a1034dc-6c9c-4541-ba1c-f66ba32fc962",
+            "name": "Guillaume",
+            "email": "guillaume@linear.app"
+          },
+          {
+            "id": "b1b14052-b9a4-4d1e-a871-5eecaa945f81",
+            "name": "Tyler",
+            "email": "tyler@linear.app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "3be7bf6c-7ae4-4e57-9294-01761f144a2e",
+      "name": "Test",
+      "issueEstimationType": "notUsed",
+      "members": {
+        "nodes": [
+          {
+            "id": "e8ec2c65-6512-46c2-b7ad-10b9d098be72",
+            "name": "Maya",
+            "email": "maya@linear.app"
+          },
+          {
+            "id": "af8b6def-f6fb-4cf3-8357-01c941e82e4a",
+            "name": "Ben",
+            "email": "ben@linear.app"
+          },
+          {
+            "id": "b5945d50-478b-42ff-b663-41d3df99a382",
+            "name": "Lily",
+            "email": "the.lena.vu@gmail.com"
+          },
+          {
+            "id": "ca7eefad-d75b-473c-8c9f-9019a48ac8d1",
+            "name": "Mingjie",
+            "email": "mingjie@linear.app"
+          },
+          {
+            "id": "5ab29b89-210c-4636-829f-d8bce8727756",
+            "name": "Aaron",
+            "email": "aaron@linear.app"
+          },
+          {
+            "id": "9744b312-c96b-486c-bab2-4ba241cc3cea",
+            "name": "Brando",
+            "email": "brando@linear.app"
+          }
+        ]
+      }
+    }
+  ],
+  "cycles": [
+    {
+      "id": "8518b861-202a-4168-b401-80dea4d98094",
+      "name": "Cycle 31",
+      "number": 1,
+      "startsAt": "2026-02-23T15:59:51.537Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.25,
+      "team": {
+        "id": "0b4426cc-1c45-49f4-900b-a0233d59e84b",
+        "name": "Rider App SubTeam Test"
+      }
+    },
+    {
+      "id": "9da8d1b0-7619-47dc-a7d4-a721d8185913",
+      "name": null,
+      "number": 2,
+      "startsAt": "2026-02-19T08:00:00.000Z",
+      "endsAt": "2026-03-05T08:00:00.000Z",
+      "progress": 0.25,
+      "team": {
+        "id": "668f3c93-48e8-49a2-bfa2-22d57b501135",
+        "name": "RFC Team"
+      }
+    },
+    {
+      "id": "b51dab2f-d1a9-4c8e-87c8-8f67732f12ed",
+      "name": "Cycle 31",
+      "number": 41,
+      "startsAt": "2026-02-19T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.32224770642201833,
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      }
+    },
+    {
+      "id": "36193a94-1fe4-4c5e-8876-0db3f365cb8a",
+      "name": null,
+      "number": 6,
+      "startsAt": "2026-02-23T05:00:00.000Z",
+      "endsAt": "2026-03-09T05:00:00.000Z",
+      "progress": 0.25,
+      "team": {
+        "id": "3fdec724-2d82-482b-b9b8-ed4f15cc4a39",
+        "name": "Linear Surf Team"
+      }
+    },
+    {
+      "id": "e8c3c330-e103-4732-97b1-7bfe928437f2",
+      "name": null,
+      "number": 17,
+      "startsAt": "2026-02-19T08:00:00.000Z",
+      "endsAt": "2026-03-05T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "30363d9e-5c14-432c-9c71-eb1deea8927b",
+        "name": "Enterprise Delivery"
+      }
+    },
+    {
+      "id": "f8c0a9d8-1119-4be6-a87a-4771f17da0a7",
+      "name": "Cycle 17",
+      "number": 17,
+      "startsAt": "2026-02-19T08:00:00.000Z",
+      "endsAt": "2026-03-05T08:00:00.000Z",
+      "progress": 0.25,
+      "team": {
+        "id": "3729b046-c3c5-4810-b646-d1f16b04b968",
+        "name": "Enterprise Playbook"
+      }
+    },
+    {
+      "id": "b63a26c0-4ccf-4a70-bd20-268bfa8932c6",
+      "name": "Cycle 17",
+      "number": 17,
+      "startsAt": "2026-02-19T08:00:00.000Z",
+      "endsAt": "2026-03-05T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "18ac8a46-ed28-44db-9fc1-dbe16f0ced8d",
+        "name": "Customer Success"
+      }
+    },
+    {
+      "id": "4d8d6264-dd76-451f-b603-41ce2ad60f47",
+      "name": null,
+      "number": 12,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.22727272727272727,
+      "team": {
+        "id": "882e9a35-d91b-444f-b4d8-96223ff28c1b",
+        "name": "Platform Engineering"
+      }
+    },
+    {
+      "id": "c85da77d-250f-4160-a40c-7876634d9edc",
+      "name": "Cycle 12",
+      "number": 13,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "d956f618-3092-44bb-b8dd-de4f62ffba03",
+        "name": "Core services"
+      }
+    },
+    {
+      "id": "7a6937b2-6cbc-4ca9-baa1-d2b91db4530d",
+      "name": "Cycle 12",
+      "number": 19,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.25,
+      "team": {
+        "id": "10b44fb0-1a11-430e-a471-2934bff234e3",
+        "name": "Developer Experience"
+      }
+    },
+    {
+      "id": "6edbd803-2342-4185-bb35-7bfee5a4e8d9",
+      "name": "Cycle 12",
+      "number": 4,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "2e517da7-9cad-41fe-9f1b-0f057fc759f2",
+        "name": "Approval"
+      }
+    },
+    {
+      "id": "402ea0c2-e00f-461f-96a2-f47991772b63",
+      "name": "Cycle 12",
+      "number": 12,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "93fa5246-e0a2-4c13-80ca-246790b2cc57",
+        "name": "ImpactExpress"
+      }
+    },
+    {
+      "id": "3650e38a-198e-4819-a51b-140bf1387a2d",
+      "name": "Cycle 12",
+      "number": 19,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.25,
+      "team": {
+        "id": "acdec4be-5129-4f73-8cc0-c1e92721c891",
+        "name": "Infrastructure & DevOps"
+      }
+    },
+    {
+      "id": "280082dd-2f4b-4ccf-81bd-b797cb5f9e37",
+      "name": "Cycle 12",
+      "number": 13,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "2b464d4f-bb50-4137-ade1-a9631da661d0",
+        "name": "Performance and reliability"
+      }
+    },
+    {
+      "id": "ddf219f5-fa97-4a07-b13e-5fe9ee026ae8",
+      "name": null,
+      "number": 16,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.5681818181818182,
+      "team": {
+        "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+        "name": "Backend Infra"
+      }
+    },
+    {
+      "id": "16e7a24c-1dec-4743-b423-694dd2982da5",
+      "name": null,
+      "number": 6,
+      "startsAt": "2026-02-18T05:00:00.000Z",
+      "endsAt": "2026-03-04T05:00:00.000Z",
+      "progress": 1,
+      "team": {
+        "id": "29e2bfdf-f58a-4812-a13a-e420ab231111",
+        "name": "Product Marketing"
+      }
+    },
+    {
+      "id": "a2ed26bb-c5dd-4222-956b-812cbe5a6e18",
+      "name": null,
+      "number": 11,
+      "startsAt": "2026-02-16T08:00:00.000Z",
+      "endsAt": "2026-03-02T08:00:00.000Z",
+      "progress": 0.4947916666666667,
+      "team": {
+        "id": "dd05d0a9-ceec-42af-ac1e-0c67cf664477",
+        "name": "Driver app"
+      }
+    },
+    {
+      "id": "e56d5005-720c-4f23-95f3-76b6122ab801",
+      "name": "Cycle 11",
+      "number": 16,
+      "startsAt": "2026-02-16T08:00:00.000Z",
+      "endsAt": "2026-03-02T08:00:00.000Z",
+      "progress": 0.5,
+      "team": {
+        "id": "d2540382-3d86-4ce0-b524-707bc4ebc983",
+        "name": "iOS"
+      }
+    },
+    {
+      "id": "bb59e4a6-794c-4468-9335-06a2dad00712",
+      "name": "Cycle 11",
+      "number": 15,
+      "startsAt": "2026-02-16T08:00:00.000Z",
+      "endsAt": "2026-03-02T08:00:00.000Z",
+      "progress": 0.4375,
+      "team": {
+        "id": "9fbfb417-846c-4de1-931a-f4e206f16d20",
+        "name": "Android"
+      }
+    },
+    {
+      "id": "ff25e152-8acc-4f91-810f-1ecda033b133",
+      "name": null,
+      "number": 5,
+      "startsAt": "2026-02-16T06:00:00.000Z",
+      "endsAt": "2026-03-02T06:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "b7e9f44a-a93e-4539-8181-cc4ddcac6094",
+        "name": "Steven's Team"
+      }
+    },
+    {
+      "id": "939c4b5b-3463-4d2d-8981-0d0bb7fa5050",
+      "name": "Cycle 25",
+      "number": 25,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0.18055555555555555,
+      "team": {
+        "id": "7e9f91c4-d583-4142-8fec-80db0fbf0b4f",
+        "name": "Playground"
+      }
+    },
+    {
+      "id": "fd771a5f-ae83-4a16-a53f-5dafdb6405bd",
+      "name": "Cycle 25",
+      "number": 25,
+      "startsAt": "2026-02-23T08:00:00.000Z",
+      "endsAt": "2026-03-09T08:00:00.000Z",
+      "progress": 0,
+      "team": {
+        "id": "a1fe32c9-73c5-4165-be46-23e7422da5e6",
+        "name": "playground sub 1"
+      }
+    },
+    {
+      "id": "ced3a82c-2319-4fda-a77c-67e491ffa0af",
+      "name": null,
+      "number": 7,
+      "startsAt": "2026-02-09T06:00:00.000Z",
+      "endsAt": "2026-03-02T06:00:00.000Z",
+      "progress": 0.296875,
+      "team": {
+        "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+        "name": "Engineering"
+      }
+    },
+    {
+      "id": "f2c21585-d2b2-4f34-a281-38e1723ad34c",
+      "name": null,
+      "number": 41,
+      "startsAt": "2026-02-16T08:00:00.000Z",
+      "endsAt": "2026-03-02T08:00:00.000Z",
+      "progress": 0.125,
+      "team": {
+        "id": "dd6d51fe-6b51-454a-966f-30edb31bbbfc",
+        "name": "Driver Support"
+      }
+    }
+  ],
+  "projects": [
+    {
+      "id": "33482c72-b245-43e4-bebd-df0ea1943315",
+      "name": "Meeting Intelligence Analytics Dashboard",
+      "startDate": "2026-09-01",
+      "targetDate": "2026-12-31",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          }
+        ]
+      }
+    },
+    {
+      "id": "4c015791-4f50-4620-8851-18970af43499",
+      "name": "Agentic Post-Meeting Workflows",
+      "startDate": "2026-08-01",
+      "targetDate": "2026-11-30",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          }
+        ]
+      }
+    },
+    {
+      "id": "90fcdcdc-5d84-4417-a4ea-783e4694dea2",
+      "name": "Intelligent Meeting Prep Engine",
+      "startDate": "2026-07-01",
+      "targetDate": "2026-09-30",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          }
+        ]
+      }
+    },
+    {
+      "id": "56eba297-b8a5-4aa1-9b4b-5628e979bded",
+      "name": "Deploying Rideshare",
+      "startDate": "2026-02-26",
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "07c001b7-1af8-4fdd-9e0a-17d53eabd7e7",
+            "name": "RideShare Business"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+      "name": "Pet-Friendly Rides MVP",
+      "startDate": "2026-03-01",
+      "targetDate": "2026-04-30",
+      "progress": 0.075,
+      "teams": {
+        "nodes": [
+          {
+            "id": "8d374591-4446-4d65-8b79-d4f353000229",
+            "name": "QA"
+          },
+          {
+            "id": "29e2bfdf-f58a-4812-a13a-e420ab231111",
+            "name": "Product Marketing"
+          },
+          {
+            "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+            "name": "Design"
+          },
+          {
+            "id": "9fbfb417-846c-4de1-931a-f4e206f16d20",
+            "name": "Android"
+          },
+          {
+            "id": "d2540382-3d86-4ce0-b524-707bc4ebc983",
+            "name": "iOS"
+          },
+          {
+            "id": "78d6f882-ef43-4005-af72-22966a22836b",
+            "name": "Rider Feedback Intake"
+          },
+          {
+            "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+            "name": "Backend Infra"
+          },
+          {
+            "id": "dd05d0a9-ceec-42af-ac1e-0c67cf664477",
+            "name": "Driver app"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "e5aeef7f-f067-47c5-80d8-3fe307a4eae3",
+      "name": "Implement Dark Mode BK 2/25",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "750cd3f9-0683-4bd5-b9bb-ba1a14f28c56",
+      "name": "Implement Dark Mode [Melissa]",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cf3460ac-5ddd-430b-9646-fc108150009c",
+      "name": "Mexico launch (Template Copy)",
+      "startDate": "2027-06-04",
+      "targetDate": "2028-06-22",
+      "progress": 0.33098591549295775,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7c8074b6-3431-4a97-a026-dcc281c3b342",
+      "name": "Implement Dark Mode",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1ad31820-c400-4be8-8e9b-84a16aea1f54",
+      "name": "Implement Dark Mode [Jesse]",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "7e9f91c4-d583-4142-8fec-80db0fbf0b4f",
+            "name": "Playground"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f81ad9b5-9d72-4890-be1b-eaad85c74bbb",
+      "name": "Scheduled Rides (Notion)",
+      "startDate": null,
+      "targetDate": "2026-06-23",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a91a1ab9-bdd0-4498-a535-5175e1e5667e",
+      "name": "Improve Jack’s backhand surfing",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "3fdec724-2d82-482b-b9b8-ed4f15cc4a39",
+            "name": "Linear Surf Team"
+          }
+        ]
+      }
+    },
+    {
+      "id": "392def1f-f613-496c-8895-8f0fa7f9f3ac",
+      "name": "Implement Dark Mode",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "9a6e6616-ec18-4d3b-bf89-84e6bcd0c646",
+      "name": "US Credit Card Set-up",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          },
+          {
+            "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+            "name": "Design"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "9aaa9631-9a88-498a-a633-6464e25cadbd",
+      "name": "OURA Data Deep-Dive",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ec4509a6-41dd-48b7-8e98-34271ce26792",
+            "name": "OURA Test"
+          }
+        ]
+      }
+    },
+    {
+      "id": "420a4180-0096-44d4-9bac-525d186ad23f",
+      "name": "Sleep Project",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ec4509a6-41dd-48b7-8e98-34271ce26792",
+            "name": "OURA Test"
+          }
+        ]
+      }
+    },
+    {
+      "id": "e6b74485-a985-4b20-bf81-ad8c346bf81f",
+      "name": "Android App update",
+      "startDate": "2026-02-19",
+      "targetDate": "2026-05-31",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          },
+          {
+            "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+            "name": "Design"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b2e28833-3424-44b1-b134-1019746f3f7a",
+      "name": "Implement Dark Mode",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0.016129032258064516,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "8267db2b-b4c7-440d-89b2-d5d8b6934573",
+      "name": "User Preference Persistence Fix",
+      "startDate": "2026-02-23",
+      "targetDate": "2026-04-17",
+      "progress": 0.25,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "6f8c3a9d-8cf4-4be1-beff-6f8711f9a7b5",
+      "name": "Driver growth and earnings transparency",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 1,
+      "teams": {
+        "nodes": [
+          {
+            "id": "dd05d0a9-ceec-42af-ac1e-0c67cf664477",
+            "name": "Driver app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "5ea910a8-9593-4f7f-8ed3-80391957c041",
+      "name": "Bonus structure",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "f639036e-c091-4795-b9a6-c27d1acbbaf7",
+            "name": "Marketplace Dynamics"
+          }
+        ]
+      }
+    },
+    {
+      "id": "df6bffe8-fc74-4a57-8a9d-d2d05a029b04",
+      "name": "Schedule Rides (Linear Agent)",
+      "startDate": null,
+      "targetDate": "2026-06-30",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7d51b5a7-6197-4ace-864f-edd01a06cb04",
+      "name": "Implement Dark Mode",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "0c6a5920-8c8b-480d-bb09-357335c003f1",
+      "name": "Maggio Test",
+      "startDate": "2026-02-17",
+      "targetDate": "2026-09-30",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "33383551-f42e-4d91-ba25-c23415b41fef",
+      "name": "Implement Dark Mode BK - 2/17",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "106fd604-b35f-4c64-83a2-fbbca05b984f",
+      "name": "TEST PROJECT FOR DYLAN",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "3fdec724-2d82-482b-b9b8-ed4f15cc4a39",
+            "name": "Linear Surf Team"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7b018679-e62f-45ab-b2c5-ae8d12bfdc51",
+      "name": "Uber: Evaluation & Expansion",
+      "startDate": "2026-04-16",
+      "targetDate": "2026-05-01",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "18ac8a46-ed28-44db-9fc1-dbe16f0ced8d",
+            "name": "Customer Success"
+          }
+        ]
+      }
+    },
+    {
+      "id": "eafd21ef-9e0c-4f8b-ba00-700c805d2a16",
+      "name": "Uber: Steady State & Optimization",
+      "startDate": "2026-03-01",
+      "targetDate": "2026-04-15",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "18ac8a46-ed28-44db-9fc1-dbe16f0ced8d",
+            "name": "Customer Success"
+          }
+        ]
+      }
+    },
+    {
+      "id": "decd81fa-13c8-4483-b25d-cf4cc231f828",
+      "name": "Uber: Enablement & Activation",
+      "startDate": "2026-02-17",
+      "targetDate": "2026-02-28",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "18ac8a46-ed28-44db-9fc1-dbe16f0ced8d",
+            "name": "Customer Success"
+          }
+        ]
+      }
+    },
+    {
+      "id": "4fbf0a59-4544-4581-a821-1408fa70bf7a",
+      "name": "Uber: Kickoff & Foundation",
+      "startDate": "2026-02-10",
+      "targetDate": "2026-02-14",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "18ac8a46-ed28-44db-9fc1-dbe16f0ced8d",
+            "name": "Customer Success"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c44e5f9d-d616-48ec-a6cb-5316ed01c423",
+      "name": "Live ride view drops off after app backgrounding",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0.25,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          },
+          {
+            "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+            "name": "Design"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "614fbfa8-2ff7-4ee9-b9e6-ce03ac62c1ce",
+      "name": "Optimize battery usage during active rides",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "25ce2627-e113-4e55-b952-2805adf093d7",
+      "name": "Scheduled Rides Reliability",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0.125,
+      "teams": {
+        "nodes": [
+          {
+            "id": "d2540382-3d86-4ce0-b524-707bc4ebc983",
+            "name": "iOS"
+          },
+          {
+            "id": "78d6f882-ef43-4005-af72-22966a22836b",
+            "name": "Rider Feedback Intake"
+          },
+          {
+            "id": "dd05d0a9-ceec-42af-ac1e-0c67cf664477",
+            "name": "Driver app"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "203dffd0-46a1-4980-ac1a-19e744199d11",
+      "name": "Welcome to Linear",
+      "startDate": null,
+      "targetDate": "2026-02-10",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "7e9f91c4-d583-4142-8fec-80db0fbf0b4f",
+            "name": "Playground"
+          }
+        ]
+      }
+    },
+    {
+      "id": "9262a9bd-125f-4824-8fc2-ce66c3fd2faa",
+      "name": "Rideshare + Linear Success Plan",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c0828fbd-b831-4b1a-876b-87c768af9e56",
+      "name": "Unified Model Execution API (UME API)",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "10b44fb0-1a11-430e-a471-2934bff234e3",
+            "name": "Developer Experience"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f31e9392-ad11-49b7-a9f5-ac8664b6007a",
+      "name": "Example Project with Issues",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "4520049a-33b5-4f2c-8449-761037b5b5ee",
+            "name": "Engineering"
+          },
+          {
+            "id": "29e2bfdf-f58a-4812-a13a-e420ab231111",
+            "name": "Product Marketing"
+          },
+          {
+            "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+            "name": "Design"
+          },
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "3a38640c-f9bf-4865-909d-56fb5b0b261d",
+      "name": "Rider app SSO/SAML authentication issues",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0.9230769230769231,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "4bdf9fb5-c8a4-4a03-b4a2-63b9c55a7e37",
+      "name": "Implement Dark Mode - Ben 2",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f8ba024e-92b7-4090-8352-4dc6d676d7e6",
+      "name": "Implement Dark Mode - Mel Mier",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cbcebef0-a9aa-41ae-baf4-42c7d4965dc9",
+      "name": "Develop billing and reporting API for Apple fleet partners",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "78d6f882-ef43-4005-af72-22966a22836b",
+            "name": "Rider Feedback Intake"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b0fcf1e8-d014-46c2-a6cf-18860fe58239",
+      "name": "Prioritizing Customer Feedback in Linear",
+      "startDate": "2026-02-04",
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "37261bc0-af43-4b17-81c2-4176aed75731",
+      "name": "Email Growth Summit 2026 (Virtual Conference)",
+      "startDate": "2026-01-01",
+      "targetDate": "2026-02-27",
+      "progress": 0.5555555555555556,
+      "teams": {
+        "nodes": [
+          {
+            "id": "29e2bfdf-f58a-4812-a13a-e420ab231111",
+            "name": "Product Marketing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b5335617-d5f4-4194-8ec7-a314b682f17d",
+      "name": "iOS App Freeze Fixing",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b7330c00-3c47-4b93-bbde-f9b65fe3ca74",
+      "name": "Help Dylan Get Barreled in the Mentawais",
+      "startDate": "2026-02-03",
+      "targetDate": "2026-05-01",
+      "progress": 0.125,
+      "teams": {
+        "nodes": [
+          {
+            "id": "3fdec724-2d82-482b-b9b8-ed4f15cc4a39",
+            "name": "Linear Surf Team"
+          },
+          {
+            "id": "78d6f882-ef43-4005-af72-22966a22836b",
+            "name": "Rider Feedback Intake"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b871c3ca-931c-40fa-904b-61c313b7d975",
+      "name": "Internal Developer Platform – Build Acceleration Project",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "882e9a35-d91b-444f-b4d8-96223ff28c1b",
+            "name": "Platform Engineering"
+          }
+        ]
+      }
+    },
+    {
+      "id": "d64df57b-f3ce-4ecd-ac1e-54dddd6fc2c3",
+      "name": "help \"Dylan Get Barreled in Mentawais\"",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "3fdec724-2d82-482b-b9b8-ed4f15cc4a39",
+            "name": "Linear Surf Team"
+          }
+        ]
+      }
+    },
+    {
+      "id": "40a14801-2d6c-4e6b-82b8-0bce69fccd00",
+      "name": "Regulatory Compliance & Licensing",
+      "startDate": "2026-02-02",
+      "targetDate": "2026-06-30",
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "2c75d808-e939-4e0b-bc4b-d99f276856ae",
+            "name": "IT & Security Operations"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1d6d4b74-6328-4493-ae7b-2ac903170022",
+      "name": "Scheduled Rides",
+      "startDate": "2026-02-02",
+      "targetDate": "2026-03-31",
+      "progress": 0.3125,
+      "teams": {
+        "nodes": [
+          {
+            "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+            "name": "Rider app"
+          }
+        ]
+      }
+    },
+    {
+      "id": "494122e8-ef2b-4314-8b99-6174ac789510",
+      "name": "Background",
+      "startDate": null,
+      "targetDate": null,
+      "progress": 0,
+      "teams": {
+        "nodes": [
+          {
+            "id": "7e9f91c4-d583-4142-8fec-80db0fbf0b4f",
+            "name": "Playground"
+          }
+        ]
+      }
+    }
+  ],
+  "sampleIssues": [
+    {
+      "id": "33489869-8a7a-4074-9934-7bdc46ec3660",
+      "title": "test 1 - initiative 1 api design",
+      "estimate": 2,
+      "assignee": {
+        "id": "1b4e91fa-87dc-451d-b5dc-451d61cfc770",
+        "name": "shannonhu519@gmail.com"
+      },
+      "project": null,
+      "cycle": {
+        "id": "9472be44-e5a0-4197-b622-0ffcd122015d",
+        "startsAt": "2026-03-23T07:00:00.000Z",
+        "endsAt": "2026-04-06T07:00:00.000Z"
+      },
+      "team": {
+        "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+        "name": "Backend Infra"
+      },
+      "state": {
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "9b58328e-ef4a-4ccb-8d62-641220fb4d28",
+      "title": "QA: Create Pet Feature Test Plan",
+      "estimate": 5,
+      "assignee": {
+        "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+        "name": "Craig"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "8d374591-4446-4d65-8b79-d4f353000229",
+        "name": "QA"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "16379a3d-7148-4bdc-a090-3b8b324ed97d",
+      "title": "Design: Create Pet Acceptance Flow Designs",
+      "estimate": 5,
+      "assignee": {
+        "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+        "name": "Erin"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "1d3d6de8-2ced-4e6f-9b20-ad6627de02d5",
+        "name": "Design"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "f87f26fa-be18-46ab-98df-5eb2e26c06ed",
+      "title": "Driver App iOS: Display Pet Details in Trip Acceptance",
+      "estimate": 3,
+      "assignee": {
+        "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+        "name": "Sarah"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "dd05d0a9-ceec-42af-ac1e-0c67cf664477",
+        "name": "Driver app"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "45a418d2-09a1-4cda-a036-00339c13ca95",
+      "title": "Driver App iOS: Create Pet Acceptance Toggle",
+      "estimate": 2,
+      "assignee": {
+        "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+        "name": "Lauren"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": {
+        "id": "a2ed26bb-c5dd-4222-956b-812cbe5a6e18",
+        "startsAt": "2026-02-16T08:00:00.000Z",
+        "endsAt": "2026-03-02T08:00:00.000Z"
+      },
+      "team": {
+        "id": "dd05d0a9-ceec-42af-ac1e-0c67cf664477",
+        "name": "Driver app"
+      },
+      "state": {
+        "name": "Done",
+        "type": "completed"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "441231c7-8198-4af8-8963-33f0d79012c4",
+      "title": "Web (Next.js): Add Pet Selection to Booking Flow",
+      "estimate": 8,
+      "assignee": {
+        "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+        "name": "Craig"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "b9c56ad2-4524-4882-a0a1-7d0081e1b0bf",
+      "title": "Android Rider App: Implement Pet Selection in Trip Flow",
+      "estimate": 8,
+      "assignee": {
+        "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+        "name": "Erin"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "9fbfb417-846c-4de1-931a-f4e206f16d20",
+        "name": "Android"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "db3cddea-b71a-4567-bed0-49e02badac8c",
+      "title": "Android Rider App: Design Pet Selection UI Component",
+      "estimate": 3,
+      "assignee": {
+        "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+        "name": "Sarah"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "9fbfb417-846c-4de1-931a-f4e206f16d20",
+        "name": "Android"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "8515ad59-0420-4f22-a04b-75a65bdbc6ed",
+      "title": "iOS Rider App: Implement Pet Selection in Trip Flow",
+      "estimate": 8,
+      "assignee": {
+        "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+        "name": "Lauren"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "d2540382-3d86-4ce0-b524-707bc4ebc983",
+        "name": "iOS"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "0e1217a7-551c-4471-9859-07b93a384abf",
+      "title": "iOS Rider App: Design Pet Selection UI Component",
+      "estimate": 3,
+      "assignee": {
+        "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+        "name": "Craig"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "d2540382-3d86-4ce0-b524-707bc4ebc983",
+        "name": "iOS"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "934447f7-bbfc-47ec-b20a-3ff15418af46",
+      "title": "BACKEND: Implement Pet-Aware Driver Matching",
+      "estimate": 3,
+      "assignee": {
+        "id": "020eafb0-20d8-42e4-bf2f-bbb10bbfff11",
+        "name": "Erin"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+        "name": "Backend Infra"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "2b2223c0-3721-47a2-b531-b92acd97646d",
+      "title": "BACKEND: Build Trip Request Pet Details API",
+      "estimate": 3,
+      "assignee": {
+        "id": "bc64837f-4236-443c-b39a-00d55d689d7b",
+        "name": "Sarah"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+        "name": "Backend Infra"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "7474563a-644a-4c69-bdb4-6f9b65e8d5b5",
+      "title": "BACKEND: Implement Driver Pet Preference API",
+      "estimate": 2,
+      "assignee": {
+        "id": "e7a0108d-d60f-469c-ae40-788f208bc19c",
+        "name": "Lauren"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": null,
+      "team": {
+        "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+        "name": "Backend Infra"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "78ca5e5f-d416-4c5f-a232-8683f9f457ec",
+      "title": "BACKEND: Create Pet-Related Database Schema",
+      "estimate": 3,
+      "assignee": {
+        "id": "4002f2b5-18b1-4cb6-8fdb-55e71d5348db",
+        "name": "Craig"
+      },
+      "project": {
+        "id": "50788b2e-a85b-41b2-82e0-fef9b58877f5",
+        "name": "Pet-Friendly Rides MVP"
+      },
+      "cycle": {
+        "id": "ddf219f5-fa97-4a07-b13e-5fe9ee026ae8",
+        "startsAt": "2026-02-23T08:00:00.000Z",
+        "endsAt": "2026-03-09T08:00:00.000Z"
+      },
+      "team": {
+        "id": "cd0136f8-5155-42dd-97d3-fda70a4866ff",
+        "name": "Backend Infra"
+      },
+      "state": {
+        "name": "In Progress",
+        "type": "started"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "4e7ab67f-dc99-4906-80df-84f750fb3a11",
+      "title": "Roll out our rideshare service in Mexico by implementing localized features and establishing strategic partnerships",
+      "estimate": 4,
+      "assignee": null,
+      "project": {
+        "id": "cf3460ac-5ddd-430b-9646-fc108150009c",
+        "name": "Mexico launch (Template Copy)"
+      },
+      "cycle": {
+        "id": "b51dab2f-d1a9-4c8e-87c8-8f67732f12ed",
+        "startsAt": "2026-02-19T08:00:00.000Z",
+        "endsAt": "2026-03-09T08:00:00.000Z"
+      },
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "In Review",
+        "type": "started"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "Incidents"
+          }
+        ]
+      }
+    },
+    {
+      "id": "440155fb-2ee3-4d91-9e54-addb3f0d629c",
+      "title": "Launch in Key Cities",
+      "estimate": 4,
+      "assignee": null,
+      "project": {
+        "id": "cf3460ac-5ddd-430b-9646-fc108150009c",
+        "name": "Mexico launch (Template Copy)"
+      },
+      "cycle": {
+        "id": "b51dab2f-d1a9-4c8e-87c8-8f67732f12ed",
+        "startsAt": "2026-02-19T08:00:00.000Z",
+        "endsAt": "2026-03-09T08:00:00.000Z"
+      },
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "Done",
+        "type": "completed"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "Ecofriendly"
+          },
+          {
+            "name": "Incidents"
+          }
+        ]
+      }
+    },
+    {
+      "id": "373655a9-40db-42e1-b003-053337eead96",
+      "title": "Analyze Competitor Strategies and Identify Differentiation Opportunities",
+      "estimate": 4,
+      "assignee": null,
+      "project": {
+        "id": "cf3460ac-5ddd-430b-9646-fc108150009c",
+        "name": "Mexico launch (Template Copy)"
+      },
+      "cycle": {
+        "id": "b51dab2f-d1a9-4c8e-87c8-8f67732f12ed",
+        "startsAt": "2026-02-19T08:00:00.000Z",
+        "endsAt": "2026-03-09T08:00:00.000Z"
+      },
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "In progress ",
+        "type": "started"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "Incidents"
+          },
+          {
+            "name": "Software Renewal"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1c2f0b20-ef7a-4cd2-b5fd-5a7072fc4067",
+      "title": "Apple is requesting that we add dark mode!",
+      "estimate": 2,
+      "assignee": {
+        "id": "12e039df-e8ca-45d8-83c5-79afbca4a753",
+        "name": "Allie"
+      },
+      "project": {
+        "id": "b2e28833-3424-44b1-b134-1019746f3f7a",
+        "name": "Implement Dark Mode"
+      },
+      "cycle": {
+        "id": "b51dab2f-d1a9-4c8e-87c8-8f67732f12ed",
+        "startsAt": "2026-02-19T08:00:00.000Z",
+        "endsAt": "2026-03-09T08:00:00.000Z"
+      },
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "In progress ",
+        "type": "started"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "Feature"
+          },
+          {
+            "name": "Enterprise"
+          },
+          {
+            "name": "Customer Reported"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b9a72ae8-d4e9-4dac-9045-cba878b149d9",
+      "title": "estimation",
+      "estimate": 32,
+      "assignee": null,
+      "project": {
+        "id": "0c6a5920-8c8b-480d-bb09-357335c003f1",
+        "name": "Maggio Test"
+      },
+      "cycle": null,
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "Backlog",
+        "type": "backlog"
+      },
+      "labels": {
+        "nodes": []
+      }
+    },
+    {
+      "id": "4002d092-3a67-4af2-ad6c-e4a6118a8637",
+      "title": "Integration testing with backend",
+      "estimate": 4,
+      "assignee": null,
+      "project": {
+        "id": "3120509f-cb83-4892-9aaf-02769fa283e2",
+        "name": "Billing & Reporting API for Fleet Partners"
+      },
+      "cycle": null,
+      "team": {
+        "id": "ffc48b2d-c4ef-40b8-8075-8dbb24b8e6eb",
+        "name": "Rider app"
+      },
+      "state": {
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "labels": {
+        "nodes": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* The neutral scale is shifted one step darker than Tailwind's default so bar
+   tracks, borders and secondary text stay legible on a projector. */
+@theme {
+  --color-gray-50: #f1f5f9;
+  --color-gray-100: #e2e8f0;
+  --color-gray-200: #cbd5e1;
+  --color-gray-300: #94a3b8;
+  --color-gray-400: #64748b;
+  --color-gray-500: #475569;
+  --color-gray-600: #334155;
+  --color-gray-700: #1e293b;
+  --color-gray-800: #0f172a;
+  --color-gray-900: #020817;
+}
+
+:root {
+  --bg-primary: #e8eef4;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #d5dee8;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+  --border: #94a3b8;
+  --accent-blue: #1d4ed8;
+  --accent-purple: #6d28d9;
+  --green: #15803d;
+  --yellow: #a16207;
+  --orange: #c2410c;
+  --red: #b91c1c;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
