@@ -42,7 +42,10 @@ section:has(.status-grid) .section-heading>div>span{font-size:11px;font-weight:8
 .table-heading>div:last-child{align-self:center}
 .table-heading h2{margin:0;display:block;font-size:18px;font-weight:750;letter-spacing:-.02em;color:#f4f7fb;line-height:1.25}
 .table-heading button{background:#172132;border-color:#33445d;color:#b7c2d0}.table-heading button:hover{border-color:#4b6d94;color:#eef3f8}
-.table-wrap th{background:#111927;border-color:#29364b;color:#8e9db0}.table-wrap td{border-color:#253145;color:#aeb9c7}.table-wrap tbody tr:hover{background:#192538}.table-wrap td:first-child strong{color:#edf2f8}.table-wrap td:first-child small{color:#8f9daf}
+.table-wrap th{background:#111927;border-color:#29364b;color:#8e9db0;padding:0}.table-wrap td{border-color:#253145;color:#aeb9c7}.table-wrap tbody tr:hover{background:#192538}.table-wrap td:first-child strong{color:#edf2f8}.table-wrap td:first-child small{color:#8f9daf}
+.sort-head{width:100%;height:100%;border:0;background:transparent;color:inherit;padding:10px 12px;display:flex;align-items:center;gap:5px;cursor:pointer;font:inherit;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.045em;white-space:nowrap;text-align:left}
+.sort-head:hover,.sort-head.active{color:#d7e3f2}
+.sort-icon{display:grid;opacity:.35}.sort-head.active .sort-icon{opacity:1;color:var(--accent)}
 .health-pill.onTrack{background:#17382f;color:#79d3aa}.health-pill.atRisk{background:#3a2c1a;color:#efbd73}.health-pill.offTrack{background:#3c222b;color:#ec8a91}.health-pill.noUpdate{background:#252d3a;color:#a8b3c2}
 .progress-cell>span{background:#273348}.progress-cell b{color:#c7d0dc}.progress-cell small{color:#8f9daf}.issue-counts b{background:#252f40;color:#bdc7d4}.issue-counts .blocked{background:#3c222b;color:#ec8a91}.milestone-badge{background:#3c222b;color:#ec8a91}.clear-status{color:#72bc98}
 .empty-list{color:#8f9daf}.empty-list strong{color:#e6ebf2}.empty-list button{background:#1a2a40;border-color:#36577b;color:#b9d4f3}

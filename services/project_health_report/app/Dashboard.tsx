@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowDownRight, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown,
+  AlertCircle, ArrowDownRight, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronUp,
   CircleDot, Clock3, ExternalLink, Filter, Flag, Gauge, Layers3, Minus, RefreshCw, Search, SlidersHorizontal,
   Sparkles, TrendingUp, TriangleAlert, X,
 } from "lucide-react";
@@ -13,6 +13,41 @@ const initialFilters: Filters = { team: "all", status: "all", initiative: "all",
 type ListMode = "all" | "done" | "inProgress" | "backlog" | "paused" | "canceled" | "noLead" | "noStatus" | "complete" | "onTrack" | "risk" | "fresh" | "stale" | "movers" | "stalled" | "regressed" | "overdue" | "blocked";
 
 const healthLabel: Record<Health, string> = { onTrack: "On track", atRisk: "At risk", offTrack: "Off track", noUpdate: "No current update" };
+type SortKey = "name" | "health" | "completion" | "delta7d" | "targetDate" | "targetDateChangeDays" | "latestUpdateDate" | "issues" | "milestones";
+type SortDir = "asc" | "desc";
+const healthRank: Record<Health, number> = { onTrack: 0, atRisk: 1, offTrack: 2, noUpdate: 3 };
+const numericSortKeys = new Set<SortKey>(["completion", "delta7d", "targetDateChangeDays", "issues", "milestones", "targetDate", "latestUpdateDate"]);
+
+function compareValues(a: string | number | null, b: string | number | null, dir: SortDir) {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  const cmp = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function sortProjects(projects: ProjectRecord[], key: SortKey | null, dir: SortDir, listMode: ListMode) {
+  return [...projects].sort((left, right) => {
+    if (!key) return listMode === "movers" ? right.delta7d - left.delta7d : left.name.localeCompare(right.name);
+    const byName = left.name.localeCompare(right.name);
+    switch (key) {
+      case "name": return compareValues(left.name, right.name, dir);
+      case "health": return compareValues(healthRank[left.health], healthRank[right.health], dir) || byName;
+      case "completion": return compareValues(left.completion, right.completion, dir) || byName;
+      case "delta7d": return compareValues(left.delta7d, right.delta7d, dir) || byName;
+      case "targetDate": return compareValues(left.targetDate, right.targetDate, dir) || byName;
+      case "targetDateChangeDays": return compareValues(left.targetDateChangeDays, right.targetDateChangeDays, dir) || byName;
+      case "latestUpdateDate": return compareValues(left.latestUpdateDate, right.latestUpdateDate, dir) || byName;
+      case "issues": return compareValues(left.openIssueCount, right.openIssueCount, dir) || compareValues(left.blockedIssueCount, right.blockedIssueCount, dir) || byName;
+      case "milestones": return compareValues(left.overdueMilestoneCount, right.overdueMilestoneCount, dir) || byName;
+    }
+  });
+}
+
+function SortHeader({ label, column, sort, onSort }: { label: string; column: SortKey; sort: { key: SortKey | null; dir: SortDir }; onSort: (column: SortKey) => void }) {
+  const active = sort.key === column;
+  return <th aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}><button type="button" className={`sort-head${active ? " active" : ""}`} onClick={() => onSort(column)}>{label}<span className="sort-icon">{active && sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span></button></th>;
+}
 const modeLabel: Record<ListMode, string> = {
   all: "All filtered projects", done: "Done projects", inProgress: "In-progress projects", backlog: "Backlog / to-do projects", paused: "Paused projects",
   canceled: "Canceled projects", noLead: "Projects without a lead", noStatus: "Projects without a status",
@@ -117,6 +152,8 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(initialFilters); const [mode, setMode] = useState<ListMode>("all"); const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey | null; dir: SortDir }>({ key: null, dir: "asc" });
+  const sortBy = (column: SortKey) => setSort((current) => current.key === column ? { key: column, dir: current.dir === "asc" ? "desc" : "asc" } : { key: column, dir: numericSortKeys.has(column) ? "desc" : "asc" });
   const load = useCallback(async () => { setLoading(true); setError(""); try { const response = await fetch("/api/dashboard", { cache: "no-store" }); const payload = await response.json() as DashboardData & { error?: string }; if (!response.ok) throw new Error(payload.error || "Could not load dashboard"); setData(payload); } catch (err) { setError(err instanceof Error ? err.message : "Could not load dashboard"); } finally { setLoading(false); } }, []);
   useEffect(() => {
     let active = true;
@@ -149,8 +186,8 @@ export default function Dashboard() {
       movers: (p) => p.delta7d > 0, stalled: (p) => p.stalled, regressed: (p) => p.delta7d < 0 || p.healthDowngrade || p.targetDateChangeDays > 0,
       overdue: (p) => Boolean((p.targetDate && p.targetDate < nowDay) || p.overdueMilestoneCount), blocked: (p) => p.blockedIssueCount > 0 || p.highPriorityIssueCount > 0,
     };
-    return base.filter(predicates[mode]).sort((a, b) => mode === "movers" ? b.delta7d - a.delta7d : a.name.localeCompare(b.name));
-  }, [base, mode, data]);
+    return sortProjects(base.filter(predicates[mode]), sort.key, sort.dir, mode);
+  }, [base, mode, data, sort]);
   const openList = (next: ListMode) => { setMode(next); requestAnimationFrame(() => document.getElementById("project-list")?.scrollIntoView({ behavior: "smooth", block: "start" })); };
 
   if (loading) return <main className="state-page"><div className="loading-mark"><span /><span /><span /></div><h1>Building the health report</h1><p>Loading projects, updates, and trend snapshots…</p><div className="loading-grid">{Array.from({ length: 6 }, (_, i) => <i key={i} />)}</div></main>;
@@ -207,7 +244,7 @@ export default function Dashboard() {
       </div></section>
 
       <section id="project-list" className="table-section"><div className="table-heading"><div><span>Project drill-down</span><h2>{modeLabel[mode]}</h2></div><div><span>{modeProjects.length} projects</span>{mode !== "all" && <button onClick={() => setMode("all")}><X size={13} />Clear view</button>}<button><Filter size={13} />Columns</button></div></div>
-        {modeProjects.length ? <div className="table-wrap"><table><thead><tr><th>Project</th><th>Health</th><th>Completion</th><th>7d</th><th>Target</th><th>Change</th><th>Latest update</th><th>Issues O / S / B</th><th>Milestones</th></tr></thead><tbody>{modeProjects.map((project) => <tr key={project.id}><td><a href={project.url} target="_blank" rel="noreferrer"><span className="project-mark" style={{ background: project.health === "onTrack" ? "#dff3ea" : project.health === "atRisk" ? "#fbecd1" : project.health === "offTrack" ? "#f9dddd" : "#e4eaf3" }}>{project.name.slice(0, 1)}</span><span><strong>{project.name}<ExternalLink size={11} /></strong><small>{project.lead ?? "No lead"} · {project.teams.join(", ")}<br />{project.initiatives.join(", ") || "No initiative"}</small></span></a></td><td><HealthPill health={project.health} /></td><td><div className="progress-cell"><span><i style={{ width: `${project.completion}%` }} /></span><b>{project.completion}%</b>{project.weightedCompletion !== null && <small>{project.weightedCompletion}% weighted</small>}</div></td><td>{delta(project.delta7d, "")}</td><td><span className={project.targetDate && project.targetDate < new Date().toISOString().slice(0, 10) ? "overdue-date" : ""}>{shortDate(project.targetDate)}</span></td><td>{project.targetDateChangeDays ? <span className={project.targetDateChangeDays > 0 ? "slip" : "positive"}>{project.targetDateChangeDays > 0 ? "+" : ""}{project.targetDateChangeDays}d</span> : "—"}</td><td><span className={project.health === "noUpdate" ? "stale-date" : ""}>{project.latestUpdateDate ? `${daysAgo(project.latestUpdateDate)}d ago` : "Never"}</span></td><td><span className="issue-counts"><b>{project.openIssueCount}</b><b>{project.startedIssueCount}</b><b className={project.blockedIssueCount ? "blocked" : ""}>{project.blockedIssueCount}</b></span></td><td>{project.overdueMilestoneCount ? <span className="milestone-badge"><TriangleAlert size={12} />{project.overdueMilestoneCount} overdue</span> : <span className="clear-status"><Check size={12} />Clear</span>}</td></tr>)}</tbody></table></div> : <div className="empty-list"><Search size={21} /><strong>No projects in this view</strong><span>Try clearing a filter or selecting another dashboard signal.</span><button onClick={() => { setMode("all"); setFilters(initialFilters); }}>Show all projects</button></div>}
+        {modeProjects.length ? <div className="table-wrap"><table><thead><tr><SortHeader label="Project" column="name" sort={sort} onSort={sortBy} /><SortHeader label="Health" column="health" sort={sort} onSort={sortBy} /><SortHeader label="Completion" column="completion" sort={sort} onSort={sortBy} /><SortHeader label="7d" column="delta7d" sort={sort} onSort={sortBy} /><SortHeader label="Target" column="targetDate" sort={sort} onSort={sortBy} /><SortHeader label="Change" column="targetDateChangeDays" sort={sort} onSort={sortBy} /><SortHeader label="Latest update" column="latestUpdateDate" sort={sort} onSort={sortBy} /><SortHeader label="Issues O / S / B" column="issues" sort={sort} onSort={sortBy} /><SortHeader label="Milestones" column="milestones" sort={sort} onSort={sortBy} /></tr></thead><tbody>{modeProjects.map((project) => <tr key={project.id}><td><a href={project.url} target="_blank" rel="noreferrer"><span className="project-mark" style={{ background: project.health === "onTrack" ? "#dff3ea" : project.health === "atRisk" ? "#fbecd1" : project.health === "offTrack" ? "#f9dddd" : "#e4eaf3" }}>{project.name.slice(0, 1)}</span><span><strong>{project.name}<ExternalLink size={11} /></strong><small>{project.lead ?? "No lead"} · {project.teams.join(", ")}<br />{project.initiatives.join(", ") || "No initiative"}</small></span></a></td><td><HealthPill health={project.health} /></td><td><div className="progress-cell"><span><i style={{ width: `${project.completion}%` }} /></span><b>{project.completion}%</b>{project.weightedCompletion !== null && <small>{project.weightedCompletion}% weighted</small>}</div></td><td>{delta(project.delta7d, "")}</td><td><span className={project.targetDate && project.targetDate < new Date().toISOString().slice(0, 10) ? "overdue-date" : ""}>{shortDate(project.targetDate)}</span></td><td>{project.targetDateChangeDays ? <span className={project.targetDateChangeDays > 0 ? "slip" : "positive"}>{project.targetDateChangeDays > 0 ? "+" : ""}{project.targetDateChangeDays}d</span> : "—"}</td><td><span className={project.health === "noUpdate" ? "stale-date" : ""}>{project.latestUpdateDate ? `${daysAgo(project.latestUpdateDate)}d ago` : "Never"}</span></td><td><span className="issue-counts"><b>{project.openIssueCount}</b><b>{project.startedIssueCount}</b><b className={project.blockedIssueCount ? "blocked" : ""}>{project.blockedIssueCount}</b></span></td><td>{project.overdueMilestoneCount ? <span className="milestone-badge"><TriangleAlert size={12} />{project.overdueMilestoneCount} overdue</span> : <span className="clear-status"><Check size={12} />Clear</span>}</td></tr>)}</tbody></table></div> : <div className="empty-list"><Search size={21} /><strong>No projects in this view</strong><span>Try clearing a filter or selecting another dashboard signal.</span><button onClick={() => { setMode("all"); setFilters(initialFilters); }}>Show all projects</button></div>}
       </section>
       <footer id="setup"><span>Project Health Report</span><p>Read-only Linear GraphQL · Hourly refresh · Daily snapshots · {data.timezone}</p></footer>
     </div>
