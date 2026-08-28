@@ -1,0 +1,5 @@
+LINEAR_API_KEY=lin_api_replace_me
+LINEAR_ROOT_TEAM=Graphing
+DASHBOARD_TIMEZONE=America/Los_Angeles
+UPDATE_FRESHNESS_DAYS=7
+CRON_SECRET=replace_with_a_long_random_value
