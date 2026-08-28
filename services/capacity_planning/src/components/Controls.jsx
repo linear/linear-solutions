@@ -133,26 +133,23 @@ export default function Controls({
 
       {/* View mode toggle */}
       <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-        <button
-          onClick={() => onViewModeChange('cycles')}
-          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-            viewMode === 'cycles'
-              ? 'bg-white text-[var(--text-primary)] shadow-sm'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-          }`}
-        >
-          Cycles
-        </button>
-        <button
-          onClick={() => onViewModeChange('projects')}
-          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-            viewMode === 'projects'
-              ? 'bg-white text-[var(--text-primary)] shadow-sm'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-          }`}
-        >
-          Projects
-        </button>
+        {[
+          { id: 'cycles', label: 'Cycles' },
+          { id: 'projects', label: 'Projects' },
+          { id: 'calendar', label: 'Calendar' },
+        ].map((mode) => (
+          <button
+            key={mode.id}
+            onClick={() => onViewModeChange(mode.id)}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              viewMode === mode.id
+                ? 'bg-white text-[var(--text-primary)] shadow-sm'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+            }`}
+          >
+            {mode.label}
+          </button>
+        ))}
       </div>
 
       {/* Capacity */}
@@ -217,7 +214,7 @@ export default function Controls({
           <option value="name">Name</option>
           <option value="utilization">Utilization (High→Low)</option>
           <option value="bandwidth">Bandwidth</option>
-          {viewMode === 'projects' && (
+          {(viewMode === 'projects' || viewMode === 'calendar') && (
             <option value="points">Points (High→Low)</option>
           )}
         </select>
