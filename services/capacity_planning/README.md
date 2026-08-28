@@ -4,6 +4,8 @@ A person-centric capacity planning dashboard for Linear. It pulls live workspace
 
 This is a client-only React app. There is no backend. The browser talks to Linear directly, so it is intended for trusted/internal use, not public deployment.
 
+![Capacity Planning dashboard](docs/capacity-dashboard.png)
+
 ## Capabilities
 
 ### Live Linear data
@@ -39,10 +41,21 @@ This is a client-only React app. There is no backend. The browser talks to Linea
 - Project view: people × projects, cycle status (active / upcoming / past / unplanned), delivery vs elapsed time
 - Project risk signals: single-owner, high unplanned ratio, low estimation coverage, stalled completions, heavy backlog
 
+### Month and quarter calendar
+- Calendar view combines commitments from overlapping team cycles into one person-level timeline
+- Month mode shows weekly columns; quarter mode shows monthly columns
+- Cycle estimates are prorated by the working days that overlap each calendar period
+- Supply uses the global points-per-cycle setting normalized to a 10-working-day cycle, without double-counting concurrent cycles
+- Column headers list overlapping cycle names; click a week or month to open the full cycle list above the grid, grouped by team with dates and weekday overlap
+- Person cells show prorated points plus short cycle chips (`C53 9`, `S8 3`); click a cell for contributing cycles, team commitments, project demand, and unestimated work
+- PTO and manual availability reduce period supply and appear as badges in calendar cells
+- Team groups are collapsible: click a team summary row to hide or show that team's people while keeping the team totals
+- Calendar respects team, person, project, cycle, capacity, buffer, and sort controls
+
 ### Filtering and sorting
 - Filters: team, person, project, cycle
-- Views: Cycles or Projects
-- Sort: name, utilization, remaining bandwidth, or points (project view)
+- Views: Cycles, Projects, or Calendar
+- Sort: name, utilization, remaining bandwidth, or points (project and calendar views)
 
 ### Reporting
 - Slide-over report preview generated from the same in-memory model
@@ -57,7 +70,8 @@ These are current boundaries, not roadmap items:
 - Only issues assigned to a cycle are included in capacity math. Backlog and unscheduled project work do not consume capacity.
 - The cycle window is active cycles plus cycles that ended in the last 30 days. Future cycles are not fetched.
 - There is no holiday calendar, on-call rotation, or native Linear PTO source.
-- There is no month/quarter calendar that combines overlapping team cycles into one concurrent-capacity number.
+- Calendar supply assumes the configured per-cycle capacity represents 10 working days. PTO remains cycle-scoped rather than date-scoped.
+- Quarter views only include cycles present in the current API window, so they are not yet a complete forward-looking quarterly plan.
 - Scenario planning (staffing changes, date shifts, scope edits, dependencies, write-back to Linear) is not implemented.
 - The Linear API key is a `VITE_` env var, so it is visible to anyone who can load the app.
 
@@ -121,6 +135,7 @@ flowchart LR
       U1[SummaryStats]
       U2[Controls]
       U3[CapacityHeatmap]
+      U6[CapacityCalendar]
       U4[PersonDetail / TeamDetail / ProjectDetail]
       U5[ReportPanel]
     end
@@ -138,6 +153,7 @@ flowchart LR
     S --> U1
     S --> U2
     S --> U3
+    S --> U6
     U3 --> U4
     S --> U5
     U5 --> R1
@@ -151,10 +167,11 @@ flowchart LR
 App
 ├── SummaryStats          # KPI cards, over-capacity teams
 ├── Controls              # team/person/project/cycle filters, capacity slider, buffer
-├── CapacityHeatmap       # main grid: people × cycles, utilization shading
+├── CapacityHeatmap       # Cycles/Projects grids: people × cycles or projects
 │   ├── PersonDetail      # drill-in: projects, issues, cross-team commitments
 │   ├── TeamDetail        # drill-in: rebalancing view
 │   └── ProjectDetail     # drill-in: scope, risk, delivery
+├── CapacityCalendar      # month/quarter timeline: prorated load, collapsible teams
 └── ReportPanel           # slide-over: preview, CSV/Sheets export, scheduler
 ```
 

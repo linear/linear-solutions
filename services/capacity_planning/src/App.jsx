@@ -4,6 +4,7 @@ import { buildCapacityModel, recalculateWithCapacity } from './data/capacityMode
 import { DEFAULT_CONFIG, getWorkingDays } from './utils/calculations';
 import SummaryStats from './components/SummaryStats';
 import CapacityHeatmap from './components/CapacityHeatmap';
+import CapacityCalendar from './components/CapacityCalendar';
 import Controls from './components/Controls';
 import ReportPanel from './components/ReportPanel';
 import { useReportScheduler } from './hooks/useReportScheduler';
@@ -217,20 +218,34 @@ function App() {
               isSchedulerActive={scheduler.isSchedulerActive}
             />
 
-            <CapacityHeatmap
-              model={model}
-              selectedTeams={selectedTeams}
-              selectedPersons={selectedPersons}
-              selectedProjects={selectedProjects}
-              selectedCycles={selectedCycles}
-              viewMode={viewMode}
-              sortBy={sortBy}
-              bufferEnabled={bufferEnabled}
-              availability={availability}
-              onAvailabilityChange={handleAvailabilityChange}
-              ptoDays={ptoDays}
-              onPtoDaysChange={handlePtoDaysChange}
-            />
+            {viewMode === 'calendar' ? (
+              <CapacityCalendar
+                model={model}
+                selectedTeams={selectedTeams}
+                selectedPersons={selectedPersons}
+                selectedProjects={selectedProjects}
+                selectedCycles={selectedCycles}
+                sortBy={sortBy}
+                bufferEnabled={bufferEnabled}
+                availability={availability}
+                ptoDays={ptoDays}
+              />
+            ) : (
+              <CapacityHeatmap
+                model={model}
+                selectedTeams={selectedTeams}
+                selectedPersons={selectedPersons}
+                selectedProjects={selectedProjects}
+                selectedCycles={selectedCycles}
+                viewMode={viewMode}
+                sortBy={sortBy}
+                bufferEnabled={bufferEnabled}
+                availability={availability}
+                onAvailabilityChange={handleAvailabilityChange}
+                ptoDays={ptoDays}
+                onPtoDaysChange={handlePtoDaysChange}
+              />
+            )}
           </>
         )}
       </main>
