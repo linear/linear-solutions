@@ -1,5 +1,7 @@
 # Auto-Share Linear Asks Issues on Private Teams
 
+[Video Walkthrough](https://share.linear.app/bSm2zgwM)
+
 ## What this does
 
 When someone submits an Ask (via Slack, email, or web form) to a private team, this automatically shares the issue back to the person who requested it, so they can track progress without being a member of the private team.
