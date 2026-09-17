@@ -54,7 +54,7 @@ PORT=3000                             # optional, default 3000
 TARGET_TEAM_IDS=                      # optional, comma-separated team UUIDs (not team keys)
 ```
 
-`TARGET_TEAM_IDS` accepts team **UUIDs** (e.g. `a1b2c3d4-e5f6-...`), not team keys (e.g. `LEG`). You can find a team's UUID via the API or in the URL when viewing the team's settings. Leave it blank if your webhook is already scoped to a specific team.
+`TARGET_TEAM_IDS` accepts team **UUIDs** (e.g. `a1b2c3d4-e5f6-...`), not team keys (e.g. `LEG`). You can find a team's UUID via the API, in the URL when viewing the team's settings, or by pressing `CMD + K` or `CTRL + K` and using the `Copy model UUID` selection. Leave it blank if your webhook is already scoped to a specific team.
 
 ### 3. Install and run
 
