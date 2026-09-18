@@ -1,0 +1,13 @@
+{
+  "label": "Claude Code",
+  "team": "YOUR_TEAM_KEY",
+  "branchPrefix": "claude",
+  "repo": "/absolute/path/to/your/repo",
+  "repoUrl": "https://github.com/YourOrg/your-repo",
+  "testCommand": "npm test",
+  "statusMap": {
+    "inProgress": "In Progress",
+    "inReview": "In Review"
+  },
+  "maxConcurrentIssues": 3
+}
