@@ -1,5 +1,5 @@
 {
-  "name": "linear-test-rank-guardrail",
+  "name": "linear-rank-guardrail",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22" },

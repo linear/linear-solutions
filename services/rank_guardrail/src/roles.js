@@ -2,7 +2,7 @@
 //
 // Allowed: active, non-app users in the same organization as the guardrail's API key
 // who are workspace owners, workspace admins, or owners (team admins) of exactly the
-// configured TEST team through an active membership.
+// protected team being reviewed, through an active membership.
 // Denied: everything else, including webhook actors that are not `user` (integration,
 // oauthClient, externalUser, missing), unknown users, and the API key's own user.
 //

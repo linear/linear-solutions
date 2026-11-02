@@ -48,10 +48,10 @@ test('state cannot be reused with another team or label', async t => {
   await assert.rejects(new Store({ ...f.cfg, label: 'other' }).load(), /scope mismatch/);
 });
 
-test('configured team requires exact identity and test name', async () => {
+test('configured team requires exact identity, whatever its name', async () => {
   const cfg = { team: 'team', key: 'mock' };
   const fake = team => async () => ({ ok: true, json: async () => ({ data: { team } }) });
-  await assert.rejects(new LinearApi(cfg, fake({ id: 'team', name: 'Production' })).team());
-  await assert.rejects(new LinearApi(cfg, fake({ id: 'other', name: 'TEST' })).team());
-  await new LinearApi(cfg, fake({ id: 'team', name: 'Rank Guardrail TEST' })).team();
+  await assert.rejects(new LinearApi(cfg, fake({ id: 'other' })).team());
+  await assert.rejects(new LinearApi(cfg, fake(null)).team());
+  await new LinearApi(cfg, fake({ id: 'team', name: 'Production' })).team();
 });

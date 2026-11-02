@@ -12,7 +12,7 @@ import { run } from '../src/cli.js';
 
 const KEY = 'lin_api_SUPERSECRETVALUE';
 const SECRET = 'whsec_SUPERSECRETVALUE';
-const ENV = { TEST_TEAM_ID: 'team', TEST_TEAM_ALLOWLIST: 'team', PROTECTED_LABEL_ID: 'label', LINEAR_API_KEY: KEY, WEBHOOK_SECRET: SECRET };
+const ENV = { PROTECTED_TEAMS: 'team:label', LINEAR_API_KEY: KEY, WEBHOOK_SECRET: SECRET };
 const service = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 async function rejectsSafely(promiseOrFn, code, pattern) {
@@ -27,8 +27,10 @@ async function rejectsSafely(promiseOrFn, code, pattern) {
 }
 
 test('config errors name the variable, never its value', async () => {
-  await rejectsSafely(() => config({ ...ENV, TEST_TEAM_ID: undefined }), 'config', /TEST_TEAM_ID is missing/);
-  await rejectsSafely(() => config({ ...ENV, TEST_TEAM_ALLOWLIST: 'other' }), 'config', /TEST_TEAM_ALLOWLIST/);
+  await rejectsSafely(() => config({ ...ENV, PROTECTED_TEAMS: undefined }), 'config', /PROTECTED_TEAMS is missing/);
+  await rejectsSafely(() => config({ ...ENV, PROTECTED_TEAMS: 'REPLACE_WITH_TEAM_UUID:REPLACE_WITH_LABEL_UUID' }), 'config', /PROTECTED_TEAMS still contains/);
+  await rejectsSafely(() => config({ ...ENV, PROTECTED_TEAMS: 'team' }), 'config', /<team-uuid>:<label-uuid> pairs/);
+  await rejectsSafely(() => config({ ...ENV, PROTECTED_TEAMS: 'team:label,team:other' }), 'config', /more than once/);
   await rejectsSafely(() => config({ ...ENV, WEBHOOK_SECRET: '' }), 'config', /WEBHOOK_SECRET is missing/);
   await rejectsSafely(() => config({ ...ENV, LINEAR_API_KEY: 'REPLACE_WITH_RESTRICTED_TEST_API_KEY' }), 'config', /LINEAR_API_KEY still contains/);
   await rejectsSafely(() => config({ ...ENV, ROLE_APPROVALS: 'TRUE' }), 'config', /ROLE_APPROVALS/);
@@ -47,10 +49,9 @@ test('API HTTP, network, GraphQL and team errors are specific but hide response 
   await rejectsSafely(api(async () => { throw new Error(`connect failed ${KEY}`); }).team(), 'api-network', /network/);
   await rejectsSafely(api(async () => ({ ok: true, json: async () => ({ errors: [{ message: `bad key ${KEY}` }] }) })).team(), 'api-graphql', /details hidden/);
   await rejectsSafely(api(async () => ({ ok: true, json: async () => { throw new Error(KEY); } })).team(), 'api-response');
-  const team = (name, id = 'team') => api(async () => ({ ok: true, json: async () => ({ data: { team: { id, name } } }) }));
-  await rejectsSafely(team('Testing Team').team(), 'team-name', /separate word/);
-  await rejectsSafely(team('Rank TEST', 'other').team(), 'team-mismatch', /TEST_TEAM_ID/);
-  await team('Rank Guardrail TEST').team();
+  const team = id => api(async () => ({ ok: true, json: async () => ({ data: { team: { id } } }) }));
+  await rejectsSafely(team('other').team(), 'team-mismatch', /PROTECTED_TEAMS/);
+  await team('team').team();
 });
 
 async function guard(t, rows, extra = {}) {
@@ -96,7 +97,7 @@ test('direct CLI commands: status reports modes, check-actor is read-only, bad u
   const requests = [];
   const makeApi = cfg => new LinearApi(cfg, async (_url, opts) => {
     const req = JSON.parse(opts.body); requests.push(req.query);
-    const data = req.query.includes('team(id') ? { team: { id: 'team', name: 'Rank TEST' } }
+    const data = req.query.includes('team(id') ? { team: { id: 'team' } }
       : req.query.includes('viewer') ? { viewer: { id: 'bot', organization: { id: 'org' } } }
         : { user: { id: 'u1', active: true, app: false, admin: false, owner: false, organization: { id: 'org' },
           teamMemberships: { nodes: [{ owner: true, archivedAt: null, team: { id: 'team' } }], pageInfo: { hasNextPage: false, endCursor: null } } } };
@@ -112,9 +113,9 @@ test('direct CLI commands: status reports modes, check-actor is read-only, bad u
 
 test('CLI process prints the sanitized reason and exits nonzero', async () => {
   const exec = promisify(execFile);
-  const env = { PATH: process.env.PATH, LINEAR_API_KEY: KEY, WEBHOOK_SECRET: SECRET, PROTECTED_LABEL_ID: 'label' };
+  const env = { PATH: process.env.PATH, LINEAR_API_KEY: KEY, WEBHOOK_SECRET: SECRET };
   const result = await exec(process.execPath, ['src/cli.js', 'status'], { cwd: service, env }).catch(e => e);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /Command failed \(config: TEST_TEAM_ID is missing/);
+  assert.match(result.stderr, /Command failed \(config: PROTECTED_TEAMS is missing/);
   assert.ok(!result.stderr.includes('SUPERSECRET') && !result.stdout.includes('SUPERSECRET'));
 });
