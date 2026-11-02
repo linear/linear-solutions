@@ -187,9 +187,29 @@ export function protectedRows(state, rows) {
   const current = new Map(rows.map(r => [r.id, r]));
   const selected = state.baseline.map(b => current.get(b.id));
   if (selected.some(r => !r || r.archivedAt || !Number.isFinite(r.sortOrder))) {
-    fail('baseline-missing', 'Baseline item missing, archived, moved, or invalid; explicit review required');
+    fail('baseline-missing', 'A protected issue has no numeric rank; explicit review required');
   }
   return selected;
+}
+// Membership follows the label: newly labeled issues join at their current position, and issues
+// that lost the label, were archived, or left the team are dropped. Existing members keep their
+// approved relative order. Updates state.baseline and returns the protected rows in that order.
+export function syncMembers(state, rows, label) {
+  const labeled = rows.filter(r => !r.archivedAt && r.labels.nodes.some(l => l.id === label));
+  if (labeled.length > 100) {
+    fail('label-count', `More than 100 non-archived issues have the protected label in team ${state.team}; found ${labeled.length}`);
+  }
+  const ids = new Set(labeled.map(r => r.id)), known = new Set(state.baseline.map(b => b.id));
+  const dropped = state.baseline.filter(b => !ids.has(b.id)).map(b => b.id);
+  const added = ordered(labeled.filter(r => !known.has(r.id)));
+  const merged = []; let i = 0;
+  for (const b of state.baseline.filter(b => ids.has(b.id))) {
+    while (i < added.length && (added[i].sortOrder - b.sortOrder || added[i].id.localeCompare(b.id)) < 0) merged.push(added[i++]);
+    merged.push(b);
+  }
+  merged.push(...added.slice(i));
+  state.baseline = merged.map(({ id, sortOrder }) => ({ id, sortOrder }));
+  return { rows: protectedRows(state, rows), added: added.map(r => r.id), dropped };
 }
 export function inOrder(rows) {
   return rows.every((r, i) => !i || rows[i - 1].sortOrder < r.sortOrder);
@@ -252,7 +272,7 @@ export class Guardrail {
     return this.store.locked(async () => {
       const s = await this.store.load();
       if (command === 'status') return this.status(s);
-      let dropped = [];
+      let dropped = [], added = [];
       if (command === 'pause') s.paused = true;
       else if (command === 'publish') {
         if (!s.paused) fail('pause-required', 'Publish requires pause: run pause, wait for "paused": true, then publish');
@@ -270,18 +290,21 @@ export class Guardrail {
         s.publishedAt = new Date().toISOString(); s.tripped = false; s.failures = 0; s.repairHistory = [];
         s.candidates = []; s.driftSince = null;
       } else if (command === 'resume') {
-        if (!s.baseline.length) fail('no-baseline', 'Publish a baseline first (pause, then publish)');
+        if (!s.baseline.length && !s.publishedAt) fail('no-baseline', 'Publish a baseline first (pause, then publish)');
         if (s.tripped) fail('breaker-tripped', 'Safety breaker is tripped: review the audit, then publish while paused to reset it');
         await this.api.team();
-        if (!restore && !inOrder(protectedRows(s, await this.api.issues()))) {
+        // Labels added or removed while paused are applied; only the order of kept issues is checked.
+        const sync = syncMembers(s, await this.api.issues(), this.cfg.label);
+        ({ added, dropped } = sync);
+        if (!restore && !inOrder(sync.rows)) {
           fail('order-changed', 'Order changed while paused: publish intentionally, or resume --restore to restore baseline');
         }
         // Webhook evidence from before the pause is not reused for approvals.
         s.paused = false; s.pending = true; s.candidates = []; s.driftSince = null;
       } else fail('usage', 'Unknown command');
-      await this.store.audit(command, { count: s.baseline.length, dropped, restore });
+      await this.store.audit(command, { count: s.baseline.length, added, dropped, restore });
       await this.store.save(s);
-      return { team: this.cfg.team, paused: s.paused, protectedCount: s.baseline.length, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
+      return { team: this.cfg.team, paused: s.paused, protectedCount: s.baseline.length, added, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
     });
   }
   status(s) {
@@ -382,13 +405,15 @@ export class Guardrail {
   async reconcile() {
     return this.store.locked(async () => {
       const s = await this.store.load();
-      if (s.paused || s.tripped || !s.baseline.length) return;
+      if (s.paused || s.tripped) return;
       try {
         await this.api.team();
         prune(s, this.clock());
         let writes = 0, repairs = null, observed = null;
         for (let pass = 0; pass < 3; pass++) {
-          const rows = protectedRows(s, await this.api.issues());
+          const { rows, changed } = await this.members(s);
+          // A label change after one of this sweep's writes invalidates the plan: re-plan next sweep.
+          if (changed && writes) { s.pending = true; await this.store.save(s); return; }
           if (inOrder(rows)) {
             if (writes || s.pending) await this.store.audit('in-order', { writes });
             this.settle(s, rows); await this.store.save(s); return;
@@ -425,7 +450,7 @@ export class Guardrail {
           await this.api.update(repair.id, repair.sortOrder); writes++;
         }
         // A maximum of three mutations per sweep; large drift requires explicit review, not a loop.
-        const rows = protectedRows(s, await this.api.issues());
+        const { rows } = await this.members(s);
         if (!inOrder(rows)) {
           s.tripped = true; await this.store.audit('breaker', { reason: 'repair-budget', writes });
         } else this.settle(s, rows);
@@ -437,6 +462,12 @@ export class Guardrail {
       }
       await this.store.save(s);
     });
+  }
+  // A fresh team read with label changes applied to the protected set.
+  async members(s) {
+    const { rows, added, dropped } = syncMembers(s, await this.api.issues(), this.cfg.label);
+    if (added.length || dropped.length) await this.store.audit('membership', { added, dropped });
+    return { rows, changed: added.length + dropped.length > 0 };
   }
   // Fresh ranks in the approved relative order become the trusted anchors for later approvals.
   settle(s, rows) {

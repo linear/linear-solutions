@@ -69,11 +69,28 @@ test('dry run plans without mutation', async t => {
   assert.match(await readFile(join(f.cfg.dir, 'audit.jsonl'), 'utf8'), /would-repair/);
 });
 
-test('label removal remains protected, new labels are not silently enrolled', async t => {
+test('label changes update membership without a publish; new issues join where they are', async t => {
   const f = await fixture(t); f.rows[0].labels.nodes = []; f.rows[0].sortOrder = 5000;
-  f.rows.push({ id: 'new', sortOrder: -1, labels: { nodes: [{ id: 'label' }] } });
-  await f.guard.reconcile(); assert.ok(inOrder(f.rows.slice(0, 3)));
-  assert.equal(f.rows[3].sortOrder, -1); assert.equal((await f.store.load()).baseline.length, 3);
+  f.rows.push({ id: 'new', sortOrder: 1500, labels: { nodes: [{ id: 'label' }] } });
+  await f.guard.reconcile();
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual((await f.store.load()).baseline.map(x => x.id), ['b', 'new', 'c']);
+  assert.match(await readFile(join(f.cfg.dir, 'audit.jsonl'), 'utf8'), /"membership","added":\["new"\],"dropped":\["a"\]/);
+  // The new member is protected like the others.
+  f.rows[3].sortOrder = 9000; await f.guard.reconcile();
+  assert.deepEqual(f.rows.slice(1).toSorted((x, y) => x.sortOrder - y.sortOrder).map(r => r.id), ['b', 'new', 'c']);
+});
+
+test('relabelling every issue and more than 100 labeled issues', async t => {
+  const f = await fixture(t);
+  for (const r of f.rows) r.labels.nodes = [];
+  await f.guard.reconcile(); assert.equal((await f.store.load()).baseline.length, 0);
+  f.rows[2].labels.nodes = [{ id: 'label' }]; await f.guard.reconcile();
+  assert.deepEqual((await f.store.load()).baseline.map(x => x.id), ['c']);
+  f.setRows(Array.from({ length: 101 }, (_, i) => ({ id: `n${i}`, sortOrder: i, labels: { nodes: [{ id: 'label' }] } })));
+  for (let i = 0; i < 3; i++) await f.guard.reconcile();
+  const s = await f.store.load(); assert.equal(s.tripped, true); assert.deepEqual(s.baseline.map(x => x.id), ['c']);
+  assert.match(await readFile(join(f.cfg.dir, 'audit.jsonl'), 'utf8'), /"code":"label-count"/);
 });
 
 test('pause/publish/resume and restart preserve intentionally accepted order', async t => {
@@ -99,10 +116,13 @@ test('dedup persists across restart and pending events recover', async t => {
   f.rows[0].sortOrder = 5000; await restarted.reconcile(); assert.ok(inOrder(f.rows));
 });
 
-test('missing/archived/moved baseline item fails closed and trips after three failures', async t => {
-  const f = await fixture(t); f.rows.pop();
+test('archived or moved-out issues leave the protected set; a missing rank fails closed', async t => {
+  const f = await fixture(t); f.rows.pop(); f.rows[0].archivedAt = '2026-01-01T00:00:00.000Z';
+  await f.guard.reconcile();
+  let s = await f.store.load(); assert.deepEqual(s.baseline.map(x => x.id), ['b']); assert.equal(s.failures, 0);
+  f.rows[1].sortOrder = null;
   for (let i = 0; i < 4; i++) await f.guard.reconcile();
-  const s = await f.store.load(); assert.equal(s.tripped, true); assert.equal(s.failures, 3); assert.equal(f.calls.length, 0);
+  s = await f.store.load(); assert.equal(s.tripped, true); assert.equal(s.failures, 3); assert.equal(f.calls.length, 0);
   await assert.rejects(f.guard.control('resume'));
 });
 
@@ -115,7 +135,8 @@ test('issue moved out of the team between repairs is not written from the prior 
   };
   await f.guard.reconcile();
   assert.equal(f.calls.length, 1);
-  assert.equal((await f.store.load()).failures, 1);
+  const s = await f.store.load(); assert.equal(s.failures, 0); assert.equal(s.pending, true);
+  await f.guard.reconcile(); assert.ok(inOrder(f.rows));
 });
 
 test('API failures retry a bounded number of sweeps', async t => {
@@ -219,7 +240,7 @@ test('multiple teams: drift is repaired only in its own team; pause and breaker 
   assert.ok(inOrder(f.rows['team-a'])); assert.ok(f.calls['team-a'].length > 0);
   assert.equal(f.calls['team-b'].length, 0); assert.ok(!inOrder(f.rows['team-b']));
   // A failing team trips only its own breaker.
-  f.rows['team-a'].pop();
+  f.rows['team-a'][0].sortOrder = null;
   for (let i = 0; i < 3; i++) await f.a.reconcile();
   await f.cli('publish', '--team', 'team-b'); await f.cli('resume', '--team', 'team-b');
   f.rows['team-b'][1].sortOrder = 9000; await f.b.reconcile();
