@@ -10,7 +10,7 @@ import { server } from '../src/cli.js';
 async function fixture(t, dry = false) {
   const dir = await mkdtemp(join(tmpdir(), 'guardrail-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const cfg = { dir, team: 'test-team', label: 'label', dry, secret: 'mock-secret' };
+  const cfg = { dir, team: 'roadmap-team', label: 'label', dry, secret: 'mock-secret' };
   let rows = ['a', 'b', 'c'].map((id, i) => ({ id, sortOrder: i * 1024,
     labels: { nodes: [{ id: 'label' }] }, status: 'Todo', cycle: 'cycle', assignee: 'person' }));
   const calls = [];
@@ -21,13 +21,19 @@ async function fixture(t, dry = false) {
   return { cfg, store, guard, api, calls, rows, setRows: next => { rows = next; } };
 }
 
-test('explicit TEST allowlist and dry-run fail closed', () => {
+test('team list config parses one label per team and dry run fails closed', () => {
   assert.throws(() => config({}));
-  const env = { TEST_TEAM_ID: 't', TEST_TEAM_ALLOWLIST: 't', PROTECTED_LABEL_ID: 'l', LINEAR_API_KEY: 'key', WEBHOOK_SECRET: 'secret' };
+  const env = { PROTECTED_TEAMS: 't:l', LINEAR_API_KEY: 'key', WEBHOOK_SECRET: 'secret', STATE_DIR: '/tmp/rank-state' };
   assert.equal(config(env).dry, true);
   assert.equal(config({ ...env, DRY_RUN: 'FALSE' }).dry, true);
   assert.equal(config({ ...env, DRY_RUN: 'false' }).dry, false);
-  assert.throws(() => config({ ...env, TEST_TEAM_ID: 'other' }));
+  const multi = config({ ...env, PROTECTED_TEAMS: ' team-a:label-a , team-b:label-shared,team-c:label-shared ' });
+  assert.deepEqual(multi.teams.map(t => [t.team, t.label]), [['team-a', 'label-a'], ['team-b', 'label-shared'], ['team-c', 'label-shared']]);
+  assert.deepEqual(multi.teams.map(t => t.dir), ['team-a', 'team-b', 'team-c'].map(id => join('/tmp/rank-state', 'teams', id)));
+  assert.ok(multi.teams.every(t => t.key === 'key' && t.secret.join() === 'secret' && t.dry === true));
+  for (const bad of ['', ',', 't', 't:', ':l', 't:l:x', 't:l,t:other', 'bad id:l', Array(21).fill(0).map((_, i) => `t${i}:l`).join(',')]) {
+    assert.throws(() => config({ ...env, PROTECTED_TEAMS: bad }), /PROTECTED_TEAMS/, bad);
+  }
 });
 
 test('raw HMAC, signed timestamp age/future and optional matching header', () => {
@@ -39,7 +45,13 @@ test('raw HMAC, signed timestamp age/future and optional matching header', () =>
   for (const args of [[Buffer.concat([raw, Buffer.from(' ')]), sig, String(now), 'secret', now],
     [raw, sig, String(now + 1), 'secret', now], [raw, sig, undefined, 'wrong', now],
     [raw, sig, undefined, 'secret', now + 60001], [raw, sig, undefined, 'secret', now - 60001],
-    [raw, 'x', undefined, 'secret', now]]) assert.throws(() => verify(...args));
+    [raw, 'x', undefined, 'secret', now], [raw, sig, undefined, ['wrong', 'other'], now]]) assert.throws(() => verify(...args));
+  // One signing secret per webhook (for example one webhook per protected team): any match verifies.
+  assert.equal(verify(raw, sig, undefined, ['other-webhook', 'secret'], now).type, 'Issue');
+  const env = { PROTECTED_TEAMS: 't:l', LINEAR_API_KEY: 'key', WEBHOOK_SECRET: ' one , two ' };
+  assert.deepEqual(config(env).secret, ['one', 'two']);
+  assert.throws(() => config({ ...env, WEBHOOK_SECRET: 'one,REPLACE_WITH_WEBHOOK_SIGNING_SECRET' }), /placeholder/);
+  assert.throws(() => config({ ...env, WEBHOOK_SECRET: ' , ' }), /WEBHOOK_SECRET is missing/);
 });
 
 test('fresh repair preserves status cycle assignee; own callbacks converge without writes', async t => {

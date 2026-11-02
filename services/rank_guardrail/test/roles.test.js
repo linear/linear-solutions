@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { Guardrail, Store, LinearApi, inOrder } from '../src/guardrail.js';
 import { authorize } from '../src/roles.js';
 
-const TEAM = 'test-team';
+const TEAM = 'roadmap-team';
 const member = (owner, team = TEAM, archivedAt = null) => ({ owner, archivedAt, team: { id: team } });
 const base = { active: true, app: false, admin: false, owner: false, organization: { id: 'org' }, teamMemberships: [], membershipsComplete: true };
 const USERS = {

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, appendFile, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { GuardrailError, fail } from './errors.js';
 import { authorize, actorType } from './roles.js';
 
@@ -9,17 +10,44 @@ const CANDIDATE_TTL_MS = 600000;
 const INTENT_TTL_MS = 600000;
 const MAX_CANDIDATES = 200;
 const MAX_CHAIN = 20;
+export const MAX_TEAMS = 20;
+const LEGACY_VARS = ['TEST_TEAM_ID', 'TEST_TEAM_ALLOWLIST', 'PROTECTED_LABEL_ID'];
+
+// PROTECTED_TEAMS=<team UUID>:<label UUID>[,<team UUID>:<label UUID>...]: one protected label per team.
+export function parseTeams(value) {
+  const entries = value.split(',').map(x => x.trim()).filter(Boolean);
+  if (!entries.length) fail('config', 'PROTECTED_TEAMS must list at least one <team UUID>:<label UUID> pair');
+  if (entries.length > MAX_TEAMS) fail('config', `PROTECTED_TEAMS lists more than ${MAX_TEAMS} teams`);
+  const teams = entries.map((entry, i) => {
+    const [team, label, ...rest] = entry.split(':').map(x => x.trim());
+    if (rest.length || !ID.test(team ?? '') || !ID.test(label ?? '')) {
+      fail('config', `PROTECTED_TEAMS entry ${i + 1} must be <team UUID>:<label UUID>`);
+    }
+    return { team, label };
+  });
+  if (new Set(teams.map(t => t.team)).size !== teams.length) {
+    fail('config', 'PROTECTED_TEAMS lists the same team more than once; use one label per team');
+  }
+  return teams;
+}
 
 export function config(env = process.env) {
-  const team = env.TEST_TEAM_ID;
-  if (!team) fail('config', 'TEST_TEAM_ID is missing in .env');
-  if (!env.TEST_TEAM_ALLOWLIST?.split(',').map(x => x.trim()).includes(team)) {
-    fail('config', 'TEST_TEAM_ID must be explicitly allowlisted: repeat the same team UUID in TEST_TEAM_ALLOWLIST');
+  const legacy = LEGACY_VARS.filter(name => env[name] !== undefined);
+  if (legacy.length) {
+    const [verb, pronoun] = legacy.length === 1 ? ['is', 'it'] : ['are', 'them'];
+    fail('config', `${legacy.join(', ')} ${verb} no longer used: set PROTECTED_TEAMS=<team UUID>:<label UUID> and remove ${pronoun} (see README "Upgrading")`);
   }
-  for (const name of ['TEST_TEAM_ID', 'PROTECTED_LABEL_ID', 'LINEAR_API_KEY', 'WEBHOOK_SECRET']) {
+  for (const name of ['PROTECTED_TEAMS', 'LINEAR_API_KEY', 'WEBHOOK_SECRET']) {
     if (!env[name]) fail('config', `${name} is missing in .env`);
-    if (env[name].startsWith('REPLACE_WITH_')) fail('config', `${name} still contains its REPLACE_WITH_ placeholder`);
+    if (env[name].startsWith('REPLACE_WITH_') || env[name].includes(':REPLACE_WITH_')) {
+      fail('config', `${name} still contains its REPLACE_WITH_ placeholder`);
+    }
   }
+  const entries = parseTeams(env.PROTECTED_TEAMS);
+  // One signing secret per Linear webhook; several are allowed so each team can have its own webhook.
+  const secrets = env.WEBHOOK_SECRET.split(',').map(x => x.trim()).filter(Boolean);
+  if (!secrets.length) fail('config', 'WEBHOOK_SECRET is missing in .env');
+  if (secrets.some(x => x.startsWith('REPLACE_WITH_'))) fail('config', 'WEBHOOK_SECRET still contains its REPLACE_WITH_ placeholder');
   if (env.ROLE_APPROVALS !== undefined && !['', 'true', 'false'].includes(env.ROLE_APPROVALS)) {
     fail('config', 'ROLE_APPROVALS must be exactly true or false (lower case)');
   }
@@ -28,15 +56,28 @@ export function config(env = process.env) {
   if (!Number.isInteger(graceMs) || graceMs < 0 || graceMs > 60000) {
     fail('config', 'APPROVAL_GRACE_MS must be a whole number of milliseconds from 0 to 60000');
   }
-  const dir = resolve(env.STATE_DIR || '.state');
-  return { team, label: env.PROTECTED_LABEL_ID, key: env.LINEAR_API_KEY,
-    secret: env.WEBHOOK_SECRET, dry: env.DRY_RUN !== 'false', approvals: env.ROLE_APPROVALS === 'true', graceMs, dir };
+  const root = resolve(env.STATE_DIR || '.state');
+  const shared = { key: env.LINEAR_API_KEY, secret: secrets, dry: env.DRY_RUN !== 'false',
+    approvals: env.ROLE_APPROVALS === 'true', graceMs };
+  // Each team gets its own state directory, lock, baseline, audit log and approval evidence.
+  const teams = entries.map(({ team, label }) => ({ ...shared, team, label, dir: join(root, 'teams', team) }));
+  return { ...shared, root, teams };
 }
 
+// Single-team state from earlier versions lived directly in STATE_DIR. Refuse to run rather than
+// silently starting a new, empty baseline next to it.
+export function checkLegacyState(cfg) {
+  if (existsSync(join(cfg.root, 'state.json'))) {
+    fail('state-migration', 'Found single-team state in STATE_DIR/state.json; move state.json and audit.jsonl into STATE_DIR/teams/<team UUID>/ (see README "Upgrading")');
+  }
+}
+
+// `secret` may be one signing secret or a list (one per configured webhook); any match is accepted.
 export function verify(raw, signature, timestamp, secret, now = Date.now()) {
   if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/i.test(signature)) throw new Error('Signature rejected');
-  const expected = createHmac('sha256', secret).update(raw).digest();
-  if (!timingSafeEqual(expected, Buffer.from(signature, 'hex'))) throw new Error('Signature rejected');
+  const given = Buffer.from(signature, 'hex');
+  const secrets = Array.isArray(secret) ? secret : [secret];
+  if (!secrets.some(s => timingSafeEqual(createHmac('sha256', s).update(raw).digest(), given))) throw new Error('Signature rejected');
   const body = JSON.parse(raw.toString('utf8'));
   // Linear signs the raw body, not the timestamp header. Use its signed millisecond timestamp.
   if (!Number.isSafeInteger(body.webhookTimestamp) || Math.abs(now - body.webhookTimestamp) > 60000) {
@@ -121,11 +162,8 @@ export class LinearApi {
     return result.data;
   }
   async team() {
-    const { team } = await this.query('query($id:String!){team(id:$id){id name}}', { id: this.cfg.team });
-    if (!team || team.id !== this.cfg.team) fail('team-mismatch', 'Linear returned a different team than TEST_TEAM_ID; check the team UUID');
-    if (!/\btest\b/i.test(team.name)) {
-      fail('team-name', 'The configured team name must contain TEST as a separate word, for example "Rank Guardrail TEST" ("Testing" or "MyTest" do not qualify)');
-    }
+    const { team } = await this.query('query($id:String!){team(id:$id){id}}', { id: this.cfg.team });
+    if (!team || team.id !== this.cfg.team) fail('team-mismatch', 'Linear returned a different team than configured in PROTECTED_TEAMS; check the team UUID');
   }
   async issues() {
     const rows = []; let after = null;
@@ -134,7 +172,7 @@ export class LinearApi {
       rows.push(...issues.nodes);
       after = issues.pageInfo.hasNextPage ? issues.pageInfo.endCursor : null;
       if (rows.length > 10000 || (issues.pageInfo.hasNextPage && !after)) {
-        fail('api-pagination', 'Team issue list exceeds 10,000 issues or returned an unsafe page; use a smaller dedicated TEST team');
+        fail('api-pagination', 'Team issue list exceeds 10,000 issues or returned an unsafe page; protect a smaller team');
       }
     } while (after);
     return rows;
@@ -244,7 +282,7 @@ export class Guardrail {
         await this.api.team();
         const rows = (await this.api.issues()).filter(r => !r.archivedAt && r.labels.nodes.some(l => l.id === this.cfg.label));
         if (!rows.length || rows.length > 100) {
-          fail('label-count', `Publish requires 1-100 non-archived issues with PROTECTED_LABEL_ID in the TEST team; found ${rows.length}`);
+          fail('label-count', `Publish requires 1-100 non-archived issues in team ${this.cfg.team} with its protected label; found ${rows.length}`);
         }
         const sorted = ordered(rows);
         if (rows.some(r => !Number.isFinite(r.sortOrder)) || !inOrder(sorted)) {
@@ -266,11 +304,11 @@ export class Guardrail {
       } else fail('usage', 'Unknown command');
       await this.store.audit(command, { count: s.baseline.length, dropped, restore });
       await this.store.save(s);
-      return { paused: s.paused, protectedCount: s.baseline.length, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
+      return { team: this.cfg.team, paused: s.paused, protectedCount: s.baseline.length, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
     });
   }
   status(s) {
-    return { paused: s.paused, tripped: s.tripped, failures: s.failures, pending: s.pending,
+    return { team: this.cfg.team, label: this.cfg.label, paused: s.paused, tripped: s.tripped, failures: s.failures, pending: s.pending,
       dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals, approvalGraceMs: this.cfg.graceMs,
       protectedCount: s.baseline.length, baseline: s.baseline, publishedAt: s.publishedAt ?? null,
       driftSince: s.driftSince, pendingApprovalEvents: s.candidates.length, ownWriteIntents: s.intents.length,
