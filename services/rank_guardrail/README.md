@@ -1,31 +1,54 @@
-# Test the rank guardrail locally
+# Rank guardrail
 
-This experimental service remembers an approved issue order and checks whether it has changed. In dry run it only logs the repair it would make. With writes explicitly enabled, it tries to restore the approved **relative order**. Optionally (section 10), reorders made by workspace owners/admins and owners of the TEST team are accepted as the new approved order instead of being repaired. Use disposable issues in one dedicated TEST team only. This is not a native ordering lock or a production integration.
+Rank guardrail protects the manual order of a chosen set of issues in one Linear team. You label the issues you care about, arrange them in a **Manual order** list, and publish that order as the approved baseline. A small Node.js service then watches the team:
 
-The guardrail only ever writes `sortOrder`. It never changes status, cycle, assignee, labels, or any other field, and it does not treat status or cycle changes as violations. (Adding an issue to a cycle no longer disturbs manual order, so there is no cycle-specific handling.)
+- In **dry run** (the default), it records the repair it would make whenever the protected issues fall out of the approved relative order.
+- With writes enabled, it puts the protected issues back in the approved relative order by updating their rank (`sortOrder`).
+- With optional **role-aware approvals**, a reorder made in Linear by a workspace owner, workspace admin, or owner of the protected team becomes the new approved order instead of being repaired.
 
-## 1. Understand the separate controls
+The guardrail only ever writes `sortOrder`. It never changes status, cycle, assignee, labels, or any other field, and it does not treat status or cycle changes as violations.
 
-You do **not** edit `state.json` or change issue status to operate the guardrail. Use the commands below.
+> **Note:** This is a small automation developed by the Linear Solutions Engineering team. It is not a Linear feature or a supported integration, and it is not a native ordering lock. Use it as an experimental starting point that your team adapts, hosts, and maintains. Its behavior is covered by offline tests; try it on disposable issues before you rely on it.
+
+## Before you start: current constraints
+
+These are enforced by the current code. Read them before you plan a rollout.
+
+- **The team name must contain the word "test".** On every API-backed command and every check, the service reads the configured team and refuses to run (`team-name` error) unless its name contains `test` as a separate word, in any case: `Roadmap TEST` and `Platform Test` qualify; `Testing` and `MyTest` do not. This safety check exists so that the service is first tried on a dedicated team. Protecting an existing team with another name requires a code change, which this guide does not cover. The related settings are also named `TEST_TEAM_ID` and `TEST_TEAM_ALLOWLIST`.
+- **One team and one label per installation.** The baseline is every non-archived issue in that team with that label: 1–100 issues, in a team with at most 10,000 issues including archived ones.
+- **Relative order only.** It protects the order of the labeled issues relative to each other, as seen in an ungrouped Manual order list. Unlabeled issues can sit anywhere between them. Boards, grouped views, priority sorting, and sub-issue order are not protected.
+- **Eventual repair, not a lock.** People can still drag issues; the service checks about every five seconds and repairs afterwards.
+- **One local process.** The service runs on one machine, keeps its state on the local filesystem, and listens only on `127.0.0.1`. Receiving webhooks needs a tunnel or reverse proxy in front of it.
+- **No automatic token renewal.** The service reads its Linear access token once at startup. You fetch a fresh OAuth token each time you start it (step 5), and you must restart it before the token expires (30 days).
+
+## How it works
+
+You operate the guardrail with CLI commands. Never edit `.state/state.json` by hand or change issue statuses to control it.
 
 | Control | Where it lives | What it means |
 | --- | --- | --- |
-| Dry run | `DRY_RUN` in `.env`, read when each process starts | `true`: never write ranks. Exactly `false`: rank writes are permitted, subject to the other controls. Editing this file does not change an already-running server. |
-| Paused | `.state/state.json`, changed with `pause` / `resume` | `paused: true`: no checks or repairs. `paused: false`: the running server may check the approved order. This is independent of dry run. |
-| Baseline | `.state/state.json`, set with `publish` | The saved ordered IDs of the issues to protect. Publishing accepts the current labeled subset and its current order. It does not reorder issues in Linear. |
-| Server running | The terminal running `npm start` | Only this long-running process checks/repairs ranks. CLI commands such as `resume` do not start a server. |
-| Role approvals | `ROLE_APPROVALS` in `.env`, read when each process starts | Off unless exactly `true`. When on, a provable reorder by an allowed role becomes the new approved order (section 10). Off: every protected reorder is repaired, whoever made it. |
+| Dry run | `DRY_RUN` in `.env`, read when each process starts | Any value other than exactly `false` means never write ranks. `false` permits rank writes, subject to the other controls. Editing `.env` does not change a server that is already running. |
+| Paused | `.state/state.json`, changed with `pause` / `resume` | `paused: true`: no checks or repairs. `paused: false`: the running server checks the approved order. Independent of dry run. |
+| Baseline | `.state/state.json`, set with `publish` | The ordered IDs of the protected issues. Publishing accepts the issues that currently have the label, in their current order. It does not reorder anything in Linear. |
+| Server | The terminal running `npm start` | Only this long-running process checks and repairs. CLI commands such as `resume` do not start it. |
+| Role approvals | `ROLE_APPROVALS` in `.env`, read when each process starts | Off unless exactly `true`. When on, a provable reorder by an allowed role becomes the new approved order (step 11). When off, every reorder of protected issues is repaired, whoever made it. |
 
 **Real repairs require all of these:** a running server, a published baseline, `paused: false`, the server started with `DRY_RUN=false`, and `tripped: false` (the safety breaker has not stopped it).
 
-A new state directory starts paused, without a baseline. Restarting preserves the saved baseline, pause flag, and breaker. Restarting does **not** automatically resume. Turning off dry run does **not** resume either.
+A new state directory starts paused, without a baseline. Restarting the server keeps the baseline, pause flag, and breaker. Restarting does **not** resume, and turning off dry run does **not** resume either.
 
-## 2. Install and prepare disposable issues
+## What you need
 
-Use Node.js 22+ and npm (tested on Node 24). From the repository root, run:
+- Node.js 22 or later and npm (tested on Node 24).
+- A checkout of this repository on the machine that will run the service.
+- A Linear workspace where you can create an OAuth application.
+- A workspace admin, if you want webhooks (needed for role-aware approvals) or need to give the app access to a private team.
+
+## 1. Install
 
 ```sh
-cd services/rank_guardrail
+git clone https://github.com/linear/linear-solutions.git
+cd linear-solutions/services/rank_guardrail
 npm ci --ignore-scripts
 npm run build
 npm test
@@ -33,25 +56,54 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Only copy `.env.example` for a new setup; do not overwrite an existing `.env`. The package has no dependencies. The build checks JavaScript syntax. Tests use mocks and loopback HTTP: no Linear API calls, ngrok, or real issue changes.
+Run every command in this guide from `services/rank_guardrail`. Only copy `.env.example` for a new setup; do not overwrite an existing `.env`. The package has no runtime dependencies. `npm run build` checks JavaScript syntax, and `npm test` uses mocks and local HTTP only: no Linear API calls and no changes to real issues.
 
-In Linear, prepare:
+## 2. Prepare the team, label, and view
 
-1. One dedicated team with the separate word `TEST` in its name, for example `Rank Guardrail TEST`.
-2. Three disposable issues; call them A, B, C for this guide. Apply the same dedicated label to all three, and no other issues for now.
-3. A team issue list set to **Manual order, ungrouped**, showing all three issues. Arrange A, B, C. Do not use a board, priority sort, sub-issue list, or grouped view for this first test.
-4. An API key with access to read/update this test team only, where permission controls permit. Do not use production credentials.
+In Linear:
 
-## 3. Fill in `.env`
+1. **Choose a team** whose name contains the word `test` (see constraints), for example `Roadmap TEST`. For a first trial, create a dedicated team.
+2. **Create a label** to mark protected issues, for example `Ranked`, and apply it only to the issues whose order you want to protect. This guide uses three disposable issues called A, B, and C.
+3. **Open a team issue list set to Manual order, ungrouped**, that shows all labeled issues, and arrange them A, B, C. Use this kind of view whenever you check or change the protected order.
 
-Open `.env` in your editor. Replace all five `REPLACE_WITH_...` values:
+## 3. Create and authorize a Linear OAuth app
+
+The guardrail authenticates as a Linear **OAuth application** using the [client credentials grant](https://linear.app/developers/oauth-2-0-authentication#client-credentials-tokens). Use this rather than a personal API key:
+
+- **Not tied to a person.** The service acts as the app's own user, so it keeps working if the person who set it up leaves, and its repairs show up as the app in issue history.
+- **Your own reorders can be approved.** With a personal key, your drags in Linear look identical to the guardrail's writes, so role-aware approvals always deny them. The app user is never an allowed approver, so repairs still can't approve themselves.
+- **Least privilege and easy revocation.** Request only `read,write`, manage the app's team access from its details page, and rotate or remove it in Linear settings without touching anyone's account.
+
+1. Open [Settings → API → OAuth applications → New](https://linear.app/settings/api/applications/new) and create an application, for example `Rank guardrail`.
+   - Turn on **client credentials tokens**. Without it, token requests fail with `Client does not support the client_credentials grant type`.
+   - The guardrail does not use the redirect/callback URL. If the form requires one, enter a URL you control, such as `http://localhost/callback`.
+   - Leave the application's own webhook settings off. This guide uses a workspace webhook instead (step 10).
+2. Copy the **client ID** and **client secret** into a private file next to `.env`:
+
+   ```sh
+   cat > .env.oauth <<'EOF'
+   LINEAR_CLIENT_ID=paste-client-id-here
+   LINEAR_CLIENT_SECRET=paste-client-secret-here
+   EOF
+   chmod 600 .env.oauth
+   ```
+
+   `.env.oauth` matches this directory's `.gitignore` (`.env.*`), so git ignores it. Never commit it, share it, or ship it to a browser.
+3. **Authorize the app for the team.** A client credentials token acts as the app's `app` actor in the workspace where you created the app, and it can access all public teams. If the protected team is private, a workspace admin must give the app access to that team from the app's details page under [Settings → Applications](https://linear.app/settings/applications/).
+4. **Scopes:** the steps below request `read,write`. The service reads teams, issues, labels, and users, and updates issue ranks, which needs `write`. Do not request `admin`.
+
+What the service sends: every Linear API request uses the exact `LINEAR_API_KEY` value as the `Authorization` header. For an OAuth token that value must be `Bearer <access token>`, which the next steps set for you. (The variable name predates OAuth support; you do not need a personal API key.)
+
+## 4. Fill in `.env`
+
+Open `.env` and set the team, label, and webhook values:
 
 ```dotenv
 TEST_TEAM_ID=REPLACE_WITH_TEST_TEAM_UUID
 TEST_TEAM_ALLOWLIST=REPLACE_WITH_SAME_TEST_TEAM_UUID
 PROTECTED_LABEL_ID=REPLACE_WITH_LABEL_UUID
-LINEAR_API_KEY=REPLACE_WITH_RESTRICTED_TEST_API_KEY
-WEBHOOK_SECRET=REPLACE_WITH_LOCAL_RANDOM_SECRET_OR_REAL_WEBHOOK_SECRET
+LINEAR_API_KEY=REPLACE_WITH_RUNTIME_OAUTH_TOKEN
+WEBHOOK_SECRET=REPLACE_WITH_WEBHOOK_SIGNING_SECRET
 DRY_RUN=true
 ROLE_APPROVALS=false
 APPROVAL_GRACE_MS=10000
@@ -59,52 +111,94 @@ STATE_DIR=.state
 PORT=8787
 ```
 
-- The team value must be the team's UUID, not its name or key. Repeat that exact UUID in `TEST_TEAM_ALLOWLIST`.
-- The label value must be the label's UUID, not its name. Keep the same team and label for this state directory.
-- `WEBHOOK_SECRET` is required even when testing without a webhook. For the polling-only test, use a local random value, for example generate one with `openssl rand -hex 32` and paste it into `.env`. When adding a real webhook later, replace it with that webhook's actual signing secret and restart.
-- Keep `.env` private. Do not paste your key or signing secret into chat. `.env` and `.state/` are gitignored.
-- Leave `DRY_RUN=true` for now. Missing, misspelled, or upper-case values do not opt into writes; only the exact value `false` does.
-- Leave `ROLE_APPROVALS=false` until section 10. It accepts only `true` or `false`; anything else is a configuration error. `APPROVAL_GRACE_MS` (0–60000, default 10000) only matters when approvals are on.
-- These instructions assume `STATE_DIR=.state` and `PORT=8787`. If you change either, adapt the file paths/port everywhere below.
+- `TEST_TEAM_ID` is the team's UUID, not its name or key. Repeat the exact UUID in `TEST_TEAM_ALLOWLIST`.
+- `PROTECTED_LABEL_ID` is the label's UUID, not its name. Keep the same team and label for the life of a state directory.
+- **Leave `LINEAR_API_KEY` as its placeholder.** You provide the real token at runtime in step 5, so it is never written to disk. If you forget, commands fail with a clear `config` error instead of using a stale credential.
+- `WEBHOOK_SECRET` is required even without a webhook. Until you set one up, use a random value, for example from `openssl rand -hex 32`. When you add the webhook (step 10), replace it with that webhook's signing secret and restart.
+- Leave `DRY_RUN=true` for now. Missing, misspelled, or upper-case values never enable writes; only the exact value `false` does.
+- Leave `ROLE_APPROVALS=false` until step 11. It accepts only `true` or `false`. `APPROVAL_GRACE_MS` (0–60000, default 10000) only matters when approvals are on.
+- This guide assumes `STATE_DIR=.state` and `PORT=8787` (allowed range 1024–65535). If you change either, adapt the paths and port below. A custom state directory outside `.state/` is not covered by `.gitignore`.
 
-If needed, these read-only queries in a GraphQL API client help locate IDs:
+Keep `.env` private. `.env` and `.state/` are gitignored.
 
-```graphql
-query { teams { nodes { id name key } } }
-query { issueLabels { nodes { id name team { id } } } }
-```
-
-These are paginated connections; follow further pages if the team/label is not on the first one. The program itself does not create teams, issues, labels, keys, or webhooks.
-
-## 4. Open two terminals in the SAME directory
-
-In **both** terminals, change into the full path to `services/rank_guardrail`. For example, if the repository is at `/Users/you/linear-solutions`, run:
+To look up the UUIDs, load a token as shown in step 5, then run these read-only queries:
 
 ```sh
-cd /Users/you/linear-solutions/services/rank_guardrail
-pwd
+curl -s https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
+  --data '{"query":"{ teams(first: 100) { nodes { id name key } } }"}'
+curl -s https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
+  --data '{"query":"{ issueLabels(first: 100) { nodes { id name team { id } } } }"}'
 ```
 
-Replace the example path with your actual checkout. Both terminals must use the same `.env` and state directory. Do not run multiple copies of the server. Existing exported shell variables override values in Node's `--env-file`; use terminals without previously exported values for these configuration names.
+For role-aware approvals (step 11) you will also want a few user UUIDs to test with:
 
-- **Terminal 1:** runs the server and stays open.
-- **Terminal 2:** runs short CLI commands and inspects results.
+```sh
+curl -s https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
+  --data '{"query":"{ users(first: 100) { nodes { id name admin } } }"}'
+```
 
-There is no HTTP dashboard or HTTP management endpoint. The CLI commands are `status`, `pause`, `publish`, `resume`, `check-actor <user-uuid>`, and `serve` (`npm start` runs `serve`). There is no `audit` command: read the audit file as shown below.
+These lists are [paginated](https://linear.app/developers/pagination); request further pages if what you need is not on the first one. The app only sees teams it has access to. The service itself never creates teams, issues, labels, OAuth apps, or webhooks.
 
-**Operator trust.** Anyone who can run these CLI commands with this `.env` and state directory is a trusted operator: `pause`, `publish`, and `resume --restore` are not role-checked. Role checks apply only to reorders made inside Linear and reported by webhook. Protect the checkout, `.env`, and `.state/` with filesystem permissions.
+## 5. Load an access token in each terminal
 
-Direct mode/state check (read-only, safe at any time):
+You use two terminals, both in `services/rank_guardrail`:
+
+- **Terminal 1** runs the server and stays open.
+- **Terminal 2** runs short CLI commands.
+
+Both must use the same `.env` and state directory. Never run more than one server against the same protected issues.
+
+In **each** terminal, define this helper and request a token. It sends the client credentials from `.env.oauth` to Linear's token endpoint and prints only the access token:
+
+```sh
+cd /path/to/linear-solutions/services/rank_guardrail
+
+linear_token() {
+  node --env-file=.env.oauth --input-type=module -e '
+    const res = await fetch("https://api.linear.app/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        scope: "read,write",
+        client_id: process.env.LINEAR_CLIENT_ID,
+        client_secret: process.env.LINEAR_CLIENT_SECRET,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || typeof body.access_token !== "string") {
+      console.error(`Token request failed: HTTP ${res.status} ${body.error_description ?? ""}`);
+      process.exit(1);
+    }
+    process.stdout.write(body.access_token);
+  '
+}
+
+TOKEN="$(linear_token)" && export LINEAR_API_KEY="Bearer $TOKEN"; unset TOKEN
+```
+
+How this fits together:
+
+- Values already in the environment take precedence over `.env` when Node reads `--env-file`, so the exported `LINEAR_API_KEY` replaces the placeholder for every command started from that terminal. The token stays in the shell's memory only.
+- If the request fails, the error is printed and `LINEAR_API_KEY` is not set, so guardrail commands stop with a `config` error.
+- Each terminal holds its own token. Linear allows many concurrent client credentials tokens per app, as long as they use the same scopes.
+- **Fetch a new token whenever you start the server**, and restart it before 30 days have passed. Linear's guidance is to request a client credentials token per run and not to store it as a long-lived key.
+- Requesting a token with different scopes revokes the app's existing app tokens, and rotating the client secret invalidates all client credentials tokens. After either, restart with a new token.
+- Make sure no other `TEST_TEAM_ID`, `DRY_RUN`, or similar guardrail variables are exported in these terminals, because they would also override `.env`.
+
+Every command, including `status` and `pause`, needs a token loaded in its terminal, because configuration is validated before any command runs. Check your configuration at any time with the read-only status command (it does not call Linear):
 
 ```sh
 node --env-file=.env src/cli.js status
 ```
 
-It prints `paused`, `tripped`, `dryRun`, `roleApprovals`, `approvalGraceMs`, the saved `baseline`, and counts of pending approval events, own-write intents, and recent repair writes. `dryRun`/`roleApprovals` describe the `.env` this CLI process read; the running server's modes are on its startup line.
+It prints `paused`, `tripped`, `dryRun`, `roleApprovals`, `approvalGraceMs`, the saved `baseline`, and counts of pending approval events, own-write intents, and recent repair writes. `dryRun` and `roleApprovals` describe the `.env` this CLI process read; the running server's modes are on its startup line.
 
-## 5. Publish your first baseline, then start in dry run
+**Operator trust.** Anyone who can run these commands with this `.env` and state directory is a trusted operator: `pause`, `publish`, and `resume --restore` are not role-checked. Role checks apply only to reorders made in Linear and reported by webhook. Protect the checkout, `.env`, `.env.oauth`, and `.state/` with filesystem permissions.
 
-Leave the server stopped. In **Terminal 2**, run each command separately and check it succeeds:
+## 6. Publish the first baseline and start in dry run
+
+With the server stopped, in **Terminal 2** run each command separately and check it succeeds:
 
 ```sh
 node --env-file=.env src/cli.js pause
@@ -116,13 +210,13 @@ node --env-file=.env src/cli.js resume
 What to expect:
 
 - `pause` returns JSON containing `"paused": true`.
-- `publish` reads Linear and saves the current labeled issues in ascending `sortOrder`. With only A, B, C labeled, its output includes `"paused": true`, `"protectedCount": 3`, `"dropped": []`, `"dryRun": true`. It **stays paused**.
-- `status` shows a `baseline` array of three IDs/rank snapshots in A, B, C order. Confirm they are the intended issues. The first publish must contain 1–100 eligible issues; this guide uses exactly three.
-- `resume` returns `"paused": false`. It does not start the server and does not perform a repair by itself.
+- `publish` reads Linear and saves the labeled issues in their current order. With A, B, C labeled, the output includes `"paused": true`, `"protectedCount": 3`, `"dropped": []`, and `"dryRun": true`. It **stays paused**.
+- `status` shows a `baseline` of three IDs and ranks in A, B, C order. Confirm they are the intended issues.
+- `resume` returns `"paused": false`. It neither starts the server nor repairs anything by itself.
 
-If a command fails, stop here and use troubleshooting below. Do not continue on the assumption it worked.
+If a command fails, stop and use the troubleshooting section. Do not continue on the assumption that it worked.
 
-Now in **Terminal 1**:
+Then in **Terminal 1** (after loading a token there):
 
 ```sh
 npm start
@@ -134,78 +228,74 @@ Wait for:
 Listening on localhost:8787; dryRun=true; roleApprovals=false; approvalGraceMs=10000
 ```
 
-Leave Terminal 1 running. The server checks immediately and about every five seconds after that. **A webhook and ngrok are not needed for this first test**: polling reads current order directly from Linear.
+Leave it running. The server checks immediately and then about every five seconds. **No webhook is needed for detection and repair**: polling reads the current order directly from Linear.
 
-## 6. Test dry run: detect a change without repairing it
+## 7. Check detection in dry run
 
-1. In Linear's ungrouped Manual list, drag C above A. The visible order should now be C, A, B.
-2. Wait roughly 5–15 seconds (longer if API requests are slow).
-3. In **Terminal 2**, inspect:
+1. In the Manual order list, drag C above A, so the order is C, A, B.
+2. Wait about 5–15 seconds.
+3. In **Terminal 2**:
 
    ```sh
    node --env-file=.env src/cli.js status
    tail -n 10 .state/audit.jsonl
    ```
 
-Expected: `paused` is `false`, `tripped` is `false`, the saved `baseline` is still A, B, C, and the audit contains `"event":"would-repair"`. **The visible order stays C, A, B.** That is the successful dry-run result. Repeated `would-repair` entries are normal until you restore the order.
+Expected: `paused` and `tripped` are `false`, the baseline is still A, B, C, and the audit log contains `"event":"would-repair"`. **The order in Linear stays C, A, B.** Repeated `would-repair` entries are normal until you restore the order.
 
-Important: `status.baseline` is the saved approved order, not a fresh read of the visible order. `status.dryRun` describes the newly invoked CLI process, not the running server. The startup line in Terminal 1 tells you the server's mode.
+`status.baseline` is the saved approved order, not a fresh read of Linear.
 
-## 7. Opt into real repairs safely (TEST issues only)
+## 8. Turn on repairs
 
-First put the issues back in the approved order while enforcement is paused:
-
-**Terminal 2:**
+First restore the approved order while paused. In **Terminal 2**:
 
 ```sh
 node --env-file=.env src/cli.js pause
 ```
 
-Wait for successful `"paused": true`. Then manually restore **A, B, C** in Linear. Do not publish C, A, B unless you actually want that to become the approved order.
+Wait for `"paused": true`, then put the issues back to A, B, C in Linear. (Do not `publish` C, A, B unless you want it to become the approved order.)
 
-**Terminal 1:** press **Ctrl+C** and wait for the server process to exit and the shell prompt to return. Do not force-kill it. Edit `.env` in your editor and change exactly:
+In **Terminal 1**, press **Ctrl+C** and wait for the prompt to return; do not force-kill it. Change `.env` to:
 
 ```dotenv
 DRY_RUN=false
 ```
 
-Still in **Terminal 1**, restart:
+Restart in Terminal 1 (load a fresh token first if more than a few days have passed):
 
 ```sh
 npm start
 ```
 
-Confirm the startup line now shows **`dryRun=false`**. It is still paused because pause state survives restarts.
-
-**Terminal 2:**
+Confirm the startup line shows **`dryRun=false`**. It is still paused, because the pause flag survives restarts. In **Terminal 2**:
 
 ```sh
 node --env-file=.env src/cli.js status
 node --env-file=.env src/cli.js resume
 ```
 
-Expect `status` to show the A, B, C baseline and `paused: true`, then `resume` to return `paused: false`. Normal `resume` refuses if the current order does not match the baseline; restore A, B, C manually while paused before retrying.
+`resume` refuses if the current order does not match the baseline; restore it while paused and retry.
 
-Now drag C above A again. Wait roughly 5–15 seconds. **This time expect A, B, C to return.** Check:
+Now drag C above A again and wait 5–15 seconds. **A, B, C should return.** Check:
 
 ```sh
 node --env-file=.env src/cli.js status
 tail -n 20 .state/audit.jsonl
 ```
 
-Expect `repair-intent` entries and no `tripped: true`. Some successful repairs are followed by `in-order`; a repair completed at the final sweep step may not emit that event. Verify the visible relative order, not the presence of one particular success log line. Other protected issues can move during re-spacing; numeric ranks need not equal their original values.
+Expect `repair-intent` entries and `tripped: false`. Some repairs are followed by an `in-order` event and some are not, so check the order in Linear rather than one specific log line. Re-spacing can move other protected issues, and their numeric ranks need not match the old values.
 
-To disable real repairs afterwards: run `pause` successfully in Terminal 2, stop Terminal 1 with Ctrl+C and wait for exit, edit `.env` back to `DRY_RUN=true`, and restart with `npm start`. Leave paused, or run `resume` only when the current approved order matches and you want dry-run checks again.
+To turn repairs off again: `pause`, stop the server with Ctrl+C, set `DRY_RUN=true`, and restart. Resume only when the current order matches the baseline and you want dry-run checks again.
 
-## 8. Intentionally accept a different order
+## 9. Change the approved order
 
-Keep Terminal 1 running. In **Terminal 2**:
+Keep the server running. In **Terminal 2**:
 
 ```sh
 node --env-file=.env src/cli.js pause
 ```
 
-**Wait for `paused: true` before dragging anything.** Then arrange C, B, A in Linear. Back in Terminal 2:
+**Wait for `"paused": true` before dragging anything.** Arrange the new order in Linear (for example C, B, A), add or remove the label on any issues whose protection should change, then:
 
 ```sh
 node --env-file=.env src/cli.js publish
@@ -213,27 +303,23 @@ node --env-file=.env src/cli.js status
 node --env-file=.env src/cli.js resume
 ```
 
-Expect the baseline to be C, B, A and the visible order to stay C, B, A after resuming. `publish` accepts the current order; it does not restore an older one. It also replaces the protected membership with the currently labeled subset and lists removed IDs in `dropped`. Review that list before resuming.
+The baseline is now the new order, and it stays that way after resuming. `publish` accepts the current order rather than restoring an older one. It also replaces the protected set with the currently labeled issues and lists removed IDs in `dropped`; review that list before resuming. Publishing also resets the safety breaker and write budget, so only publish once the order and membership are what you want.
 
-`pause` waits for any active sweep to finish under a shared filesystem lock. A failed or timed-out pause is **not** a pause acknowledgement. Publishing requires pause and clears the safety breaker/write budget, so do it only after reviewing the desired order and membership.
+`pause` waits for any running check to finish. A failed or timed-out `pause` has **not** paused the service.
 
-**Advanced option—not needed for this guide:** `resume --restore` bypasses the normal changed-order refusal and allows the server to restore the *old* baseline on its next check (if writes are enabled). Do not use it to accept an intentional reorder or as a generic fix for failed commands.
+**Advanced:** `resume --restore` skips the changed-order check so that the server restores the *old* baseline on its next check (if writes are enabled). Do not use it to accept an intentional reorder or as a generic fix for failed commands.
 
-## 9. Optional: test webhook delivery with ngrok
+## 10. Optional: add a webhook
 
-Polling and webhook handling are separate checks. Seeing repairs happen does not by itself prove the webhook is configured correctly.
+Polling is enough for detection and repair. A webhook is required only for role-aware approvals (step 11), because polling cannot tell who moved an issue.
 
-1. Keep the two terminals above. In a **third terminal**, start:
+Linear only delivers webhooks to a publicly reachable HTTPS URL, and expects a `200` response within five seconds. The service listens on `127.0.0.1:8787` only, so put a tunnel (for example `ngrok http 8787`) or a TLS reverse proxy on the same machine in front of it, forwarding `POST /webhook`.
 
-   ```sh
-   ngrok http 8787
-   ```
+1. A workspace admin opens [Settings → API](https://linear.app/settings/api), creates a **new webhook** with the URL `https://YOUR-PUBLIC-HOST/webhook`, selects **only the protected team** (not all public teams), and enables **Issue** data change events.
+2. Copy the webhook's signing secret from its detail page into `WEBHOOK_SECRET` in `.env`. Then `pause`, stop the server with Ctrl+C, restart with `npm start`, and `resume` once the baseline and current order match. The server reads the secret only at startup.
+3. Change one protected issue's rank, then check the delivery in Linear or in your tunnel's request inspector. A valid delivery receives HTTP 200 with the body `accepted`. Only this confirms that signature and timestamp verification passed; repairs alone could have come from polling. Keep request inspectors private, because they retain issue payloads.
 
-2. In Linear's webhook settings, create a webhook with URL `https://YOUR-NGROK-HOST/webhook`. Select only the dedicated test team and Issue events (updates required; include creation/removal where selectable). Do not select all teams.
-3. Copy that webhook's actual signing secret into `WEBHOOK_SECRET` in `.env`. Pause from Terminal 2, stop Terminal 1 with Ctrl+C and wait for exit, restart `npm start`, then resume only after confirming the baseline/current order still match. The server cannot pick up a new secret without restarting.
-4. Change a disposable issue and inspect Linear's delivery result or ngrok's private inspector. A valid delivery should receive HTTP 200 with `accepted`. Only this delivery evidence confirms the webhook path, signature, and timestamp checks passed; repairs alone could have come from polling. Keep the inspector private because it can retain issue payloads.
-
-An unsigned local request should be rejected without stopping the server:
+An unsigned request is rejected without affecting the server:
 
 ```sh
 curl -i -X POST http://127.0.0.1:8787/webhook \
@@ -241,35 +327,35 @@ curl -i -X POST http://127.0.0.1:8787/webhook \
 # Expected: HTTP 401
 ```
 
-There is no browser home page or health endpoint; other routes return 404. If the ngrok hostname changes, update the webhook URL.
+There is no web page or health endpoint; other routes return 404. If your tunnel's hostname changes, update the webhook URL. This guide has not validated delivery through an OAuth application's own webhook settings.
 
-## 10. Optional: role-aware approvals
+## 11. Optional: role-aware approvals
 
-With `ROLE_APPROVALS=true`, a reorder of protected issues is **accepted** (becomes the new baseline, no repair) only when the guardrail can prove who made it. Everyone else's reorders are repaired as before. This needs the working webhook from section 9: polling alone cannot tell who moved an issue, so without a webhook every move is repaired after the grace period.
+With `ROLE_APPROVALS=true`, a reorder of protected issues is **accepted** (it becomes the new baseline and is not repaired) only when the guardrail can prove who made it. Everyone else's reorders are repaired as before. This needs the working webhook from step 10; without it, every move is repaired after the grace period.
 
-**Who may reorder.** An active, non-app user in the same workspace as the API key who is a workspace **owner**, workspace **admin**, or **owner (team admin) of exactly the configured TEST team** through an active membership. Owners of other teams (including parent teams), members, inactive/suspended users, app users, users from other workspaces, unknown users, and non-user actors (`integration`, `oauthClient`, `externalUser`, or none) are denied. The API key's own user is always denied, so its writes can never approve themselves; use a dedicated key user, because the operator's own UI drags are indistinguishable from API calls made with their personal key.
+**Who may reorder.** An active, non-app user in the same workspace as the guardrail's token who is a workspace **owner**, workspace **admin**, or an **owner of exactly the protected team** through an active membership. Owners of other teams (including parent teams), regular members, inactive or suspended users, app users, users from other workspaces, unknown users, and non-user actors (`integration`, `oauthClient`, `externalUser`, or none) are denied. The token's own user, the OAuth app, is always denied, so the guardrail's repairs can never approve themselves. Because the guardrail authenticates as an app rather than as a person, people's own drags in Linear are attributed to them and can be approved.
 
-> **Free plan caveat:** on the Free plan Linear reports every member as an admin, so every active member would be allowed to reorder. Use a paid-plan test workspace, or leave approvals off.
+> **Free plan caveat:** on the Free plan Linear reports every member as an admin, so every active member would be allowed to reorder. Use approvals only on a paid plan, or leave them off.
 
-**What counts as proof.** All of these must hold, checked on a fresh read under the state lock:
+**What counts as proof.** All of these must hold, checked on a fresh read while the state is locked:
 
-- A signed Issue `update` webhook whose `updatedFrom.sortOrder` and `data.sortOrder` are both numbers and differ, for a baseline issue whose `data.teamId` is the TEST team. Status-, cycle- or assignee-only events carry no rank change and can never approve anything, including drift made by someone else at the same time.
-- Its previous rank equals the guardrail's trusted anchor for that issue (the last rank seen in approved order), and following webhook steps from that anchor reaches the issue's current rank, with the last step's `updatedAt` equal to the issue's current `updatedAt` (no later unseen update).
-- Every protected issue whose rank differs from its anchor is explained this way, and every step's actor is allowed. Mixed changes (an allowed move plus any unexplained or denied move) are rejected as a whole and repaired; the guardrail never accepts a whole snapshot.
-- The new order has distinct ranks. Webhooks for the guardrail's own repair writes (persisted as intents before each write) are ignored.
+- A signed Issue `update` webhook whose `updatedFrom.sortOrder` and `data.sortOrder` are both numbers and differ, for a baseline issue in the protected team. Status-, cycle-, or assignee-only events carry no rank change and never approve anything, including someone else's simultaneous drift.
+- Its previous rank equals the guardrail's trusted anchor for that issue (its last rank in approved order), following webhook steps from that anchor reaches the issue's current rank, and the last step's `updatedAt` equals the issue's current `updatedAt` (no later unseen update).
+- Every protected issue whose rank differs from its anchor is explained this way, and every step's actor is allowed. Mixed changes (an allowed move plus any unexplained or denied move) are rejected as a whole and repaired.
+- The new order has distinct ranks. Webhooks for the guardrail's own repair writes (recorded as intents before each write) are ignored.
 
-Approval changes only the order of the existing baseline IDs and their anchors in local state. It never adds or removes protected issues and never writes to Linear. It survives polling and restarts. In dry run, approvals still update the local baseline (no Linear writes), so you can test roles without enabling repairs.
+An approval changes only the order and anchors of the existing baseline in local state. It never adds or removes protected issues and never writes to Linear. In dry run, approvals still update the local baseline, so you can test roles without enabling repairs.
 
-**Grace period.** Polling can see a move before its webhook arrives. While some drift is unexplained, the server waits up to `APPROVAL_GRACE_MS` (from first detection, audited as `approval-wait`) before repairing. A webhook that arrives later than that is stale: the move has been repaired and the event cannot approve anything. Grace reduces, but cannot eliminate, this race.
+**Grace period.** Polling can see a move before its webhook arrives. While some drift is unexplained, the server waits up to `APPROVAL_GRACE_MS` from first detection (audited as `approval-wait`) before repairing. A webhook that arrives after that is too late: the move has already been repaired and the event cannot approve anything.
 
-**Test it (TEST issues only).** Pause, set `ROLE_APPROVALS=true` in `.env`, restart the server, confirm the startup line shows `roleApprovals=true`, then resume. Check roles directly first (read-only; prints `allowed` and a `reason` such as `workspace-admin`, `team-owner`, `not-owner-admin-or-team-owner`):
+**Turn it on.** `pause`, set `ROLE_APPROVALS=true` in `.env`, restart the server, confirm the startup line shows `roleApprovals=true`, then `resume`. Check people's roles first (read-only; prints `allowed` and a `reason` such as `workspace-admin`, `team-owner`, or `not-owner-admin-or-team-owner`):
 
 ```sh
 node --env-file=.env src/cli.js check-actor ADMIN_USER_UUID
 node --env-file=.env src/cli.js check-actor MEMBER_USER_UUID
 ```
 
-Then, as an allowed user, drag C above A; as a member, drag B to the top. Inspect:
+Then have an allowed user drag C above A, and a regular member drag B to the top. Inspect:
 
 ```sh
 node --env-file=.env src/cli.js status
@@ -278,72 +364,91 @@ grep -E 'approved-move|approval-rejected|approval-wait|own-callback' .state/audi
 
 Expect an `approved-move` for the allowed user's drag (baseline C, A, B, no repair), and an `approval-rejected` with reason `unauthorized-actor` (or `unexplained-rank-change` if the webhook was missing) for the member's drag, followed by a repair back to C, A, B (or `would-repair` in dry run). Audit entries contain issue and user UUIDs and role reasons, never names, emails, or secrets.
 
-If an allowed move is repaired anyway, check: the webhook delivered within the grace period (section 9); the delivery payload includes `updatedFrom.sortOrder` (if Linear omits it, approvals fail closed); nobody else changed protected issues at the same time; and nothing else updated the moved issue afterwards. When in doubt use the manual path: `pause`, arrange, `publish`, `resume`.
+If an allowed move is repaired anyway, check that the webhook arrived within the grace period, that its payload includes `updatedFrom.sortOrder` (approvals fail closed without it), that nobody else changed protected issues at the same time, and that nothing else updated the moved issue afterwards. You can always use the manual path instead: `pause`, arrange, `publish`, `resume`.
 
-## 11. Additional acceptance checks
+## 12. Run it for longer
 
-Use only disposable test issues. Avoid repeated live drags: they can exhaust the write budget. The mock tests cover retries, contention, and duplicate callbacks without spending that budget.
+- **Token lifetime.** Restart with a freshly fetched token at least every 30 days: `pause`, stop the server, load a new token (step 5), `npm start`, `resume`. If the token expires or is revoked while the server is running, API calls return 401, and after three consecutive failed checks the safety breaker trips. To recover, `pause`, restart with a new token, review the order, `publish`, and `resume`.
+- **Hosting.** Keep exactly one server process per state directory, on one machine with a local disk (no NFS or multiple replicas), started from this directory with the same `.env` and `.state/`. A process manager (systemd, launchd, or a container with a persistent volume for `STATE_DIR`) can restart it after a crash; saved state is picked up and polling recovers missed events. Have it fetch a new token with the helper above before each start rather than storing a token in a file. [`services/linear-token-renew`](../linear-token-renew) shows token-renewal patterns you can adapt.
+- **Revoking access.** To stop the guardrail from changing Linear, `pause` it. To cut off its API access entirely, rotate the OAuth app's client secret (which immediately invalidates its client credentials tokens) or delete the app.
+- **Records.** `.state/audit.jsonl` contains issue IDs, ranks, and user UUIDs, not credentials. Retention and backups are up to you.
 
-- **Other fields stay changed:** change B's status, cycle, and assignee, then disturb the approved order. After repair, those field changes should remain. The service sends only `{sortOrder}` in its update input.
-- **Label removal stays protected:** remove the label from an issue already in the baseline and disturb its rank. It remains protected by saved ID. New labeled issues are not automatically added either. Only a later explicit paused `publish` updates membership.
-- **Restart persists settings:** pause, stop/restart Terminal 1, and inspect `status`. Baseline and `paused: true` survive. Resume explicitly for further checks. Pending/missed events are recovered by periodic reads.
-- **Duplicates/own callbacks:** run `npm test` for signed HTTP, retry deduplication, fresh reads instead of stale webhook ranks, own-write intents, and no additional writes once approved order is restored.
-- **Roles (offline):** `npm test` covers allowed owners/admins/exact team owners; denied other-team owners, members, inactive, app, foreign, unknown and non-user actors; status/cycle-only events not approving drift; combined rank+status changes; own callbacks; mixed, missed, stale and chained events; approval surviving polling/restart; unchanged membership; and sanitized errors.
-- **Missing/moved/archived issues:** tested with mocks. In live testing, pause before deliberately moving a protected issue out of the team; do not rely on a team-move race being atomic. A missing baseline issue on a fresh read fails closed, and three consecutive failed sweeps trip the breaker.
+## Command reference
 
-## Troubleshooting: inspect first, do not edit state by hand
+Run from `services/rank_guardrail` as `node --env-file=.env src/cli.js <command>`, in a terminal with a token loaded (step 5):
 
-Always run these in Terminal 2 from `services/rank_guardrail`:
+| Command | Calls Linear | What it does |
+| --- | --- | --- |
+| `status` | No | Prints mode, pause and breaker state, and the saved baseline. |
+| `pause` | No | Stops checks and repairs; waits for a running check to finish. |
+| `publish` | Yes | While paused, saves the currently labeled issues and their order as the baseline, and resets the breaker. |
+| `resume` | Yes | Restarts checks if the current order matches the baseline. |
+| `resume --restore` | Yes | Restarts checks even if the order changed, so the old baseline is restored. |
+| `check-actor <user-uuid>` | Yes | Read-only: shows whether that user could approve a reorder. |
+| `serve` | Yes | Runs the server. `npm start` runs `serve` with `.env`. |
+
+There is no `audit`, `enable`, `disable`, or `reset` command, and no HTTP dashboard or management endpoint.
+
+## Troubleshooting
+
+Inspect first; do not edit state by hand. In Terminal 2:
 
 ```sh
 node --env-file=.env src/cli.js status
 tail -n 20 .state/audit.jsonl
 ```
 
-The audit file may not exist until the first successful state-changing command. A CLI failure prints `Command failed (<code>: <reason>)` and exits nonzero. Reasons name configuration variables and HTTP status codes but never their values, API response text, or credentials; anything unexpected prints `unexpected-error` with a generic hint.
+The audit file may not exist until the first successful state-changing command. A failed command prints `Command failed (<code>: <reason>)` and exits nonzero. Reasons name configuration variables and HTTP status codes, never their values, API response text, or credentials; anything unexpected prints `unexpected-error`.
 
 | Code | Meaning / next step |
 | --- | --- |
-| `config` | A named `.env` value is missing, still a `REPLACE_WITH_` placeholder, not allowlisted, or invalid (`ROLE_APPROVALS`, `APPROVAL_GRACE_MS`, `PORT`). |
-| `team-name` | The team name must contain `TEST` as a separate word (`Rank Guardrail TEST`; not `Testing` or `MyTest`). Rename the test team. |
-| `team-mismatch` | Linear returned a different team: `TEST_TEAM_ID` must be the team UUID, not its key or name. |
-| `api-http` | Linear API HTTP status, e.g. 401 (check key), 403 (key lacks team access), 429 (wait), 5xx (retry later). |
+| `config` | A named `.env` value is missing, still a `REPLACE_WITH_` placeholder, not allowlisted, or invalid (`ROLE_APPROVALS`, `APPROVAL_GRACE_MS`, `PORT`). `LINEAR_API_KEY ... placeholder` means no token is loaded in this terminal: run step 5. |
+| `team-name` | The team name must contain `test` as a separate word (see constraints). |
+| `team-mismatch` | `TEST_TEAM_ID` must be the team's UUID, not its key or name. |
+| `api-http` | Linear returned an HTTP error: 401 (token missing `Bearer`, expired, or revoked; load a new one), 403 (the app lacks access to this team or operation; check team access and `write` scope), 429 (rate limited; wait), 5xx (retry later). |
 | `api-network` / `api-response` | No connection or timeout / unreadable response. Retry. |
-| `api-graphql` | Linear rejected the query: check UUIDs and key permissions. Details are intentionally hidden. |
+| `api-graphql` | Linear rejected the request: check UUIDs, the app's team access, and scopes. Details are intentionally hidden. |
 | `pause-required` | Run `pause`, wait for `"paused": true`, then `publish`. |
-| `label-count` | Publish needs 1–100 non-archived issues with the label in the TEST team; the message shows how many were found. |
-| `rank-collision` | Protected issues share a rank: drag them into a distinct order while paused, then publish. |
-| `order-changed` / `no-baseline` / `breaker-tripped` | See the `resume` and `tripped` rows below. |
-| `state-scope` | This `STATE_DIR` belongs to another team/label. Use a separate directory. |
+| `label-count` | Publish needs 1–100 non-archived issues with the label in the team; the message shows how many were found. |
+| `rank-collision` | Protected issues share a rank: while paused, drag them into a distinct order, then publish. |
+| `order-changed` | `resume` found a different order. Restore the approved order while paused, or `publish` the new order on purpose. |
+| `no-baseline` | Run `pause`, then `publish` first. |
+| `breaker-tripped` | See the `tripped: true` row below. |
+| `state-scope` | This `STATE_DIR` belongs to another team or label. Use a separate directory. |
 | `state-lock` / `state-unreadable` | See the lock row below / preserve `state.json` and stop all processes. |
 | `usage` | Unknown command or argument. |
 
 | Symptom | Check / next step |
 | --- | --- |
-| No repair, `would-repair` appears | Server is in dry run. Use section 7 only if you want real writes. |
-| No checks, `paused: true` | Check the approved/current order, then run `resume`. Changing `.env` alone will not resume. |
-| `paused: false`, but nothing happens | Is Terminal 1 still running? Is there a nonempty baseline? Is `tripped` false? Check the Manual ungrouped view, startup line, and audit. |
-| `status` says `dryRun: false` but server logs plans | The CLI read the edited file, but the old server did not. Pause, stop and wait for exit, restart, verify its startup line, then resume as appropriate. Check for inherited exported variables overriding `.env`. |
-| Initial `publish` fails | Read the error code above. Verify all five required env values, actual team/label UUIDs, allowlist match, TEST as a separate word in the team name, API permissions/connectivity, 1–100 labeled non-archived issues, and distinct finite ranks. |
-| Allowed user's drag is repaired | Approvals are off (`roleApprovals=false` on the startup line), the webhook is missing/late, the actor check fails (`check-actor`), or the change was mixed/stale. See section 10 and the `approval-rejected` audit reason. |
-| `publish` fails after previous testing | It requires `paused: true`. Run `pause` successfully first. |
-| `resume` fails | It requires a baseline, an untripped breaker, and the current protected relative order matching the baseline. While paused, restore the approved order manually, or intentionally `publish` the new desired order. Do not automatically use `--restore`. |
-| `tripped: true` | Stop experimenting. Inspect audit and issue eligibility. Repair budget is 3 writes per sweep / 10 attempted writes in 10 minutes; 3 consecutive failed sweeps also trip it. After understanding the cause, pause, arrange the desired eligible subset, publish deliberately, inspect, then resume. Waiting/restarting alone does not clear a tripped breaker. |
-| Webhook returns 401 | Check the actual webhook signing secret, restart after editing it, synchronize your clock, and use a fresh delivery. The API key is not the webhook secret. Polling can still work while webhook verification fails. |
-| Wrong team/label or different baseline in status | Stop; check working directory and `STATE_DIR`. Never run two different state directories against the same protected set. Changing team or label with existing state fails scope validation. |
-| Lock error / command hangs then fails | A sweep may hold the lock; wait and retry (lock wait is about 30 seconds). After an unclean kill, stop **every** process using that state directory before removing only a confirmed stale `.state/lock` directory. Never remove an active lock or delete `.state` to fix a test. |
+| Token request fails | `Client does not support the client_credentials grant type`: turn on client credentials tokens for the app. `Invalid client`: check `.env.oauth`, or the secret was rotated. |
+| No repair, `would-repair` appears | The server is in dry run. Use step 8 if you want real writes. |
+| No checks, `paused: true` | Check the approved and current order, then run `resume`. Editing `.env` alone does not resume. |
+| `paused: false`, but nothing happens | Is the server still running? Is there a baseline? Is `tripped` false? Check the Manual order ungrouped view, the startup line, and the audit log. |
+| `status` says `dryRun: false` but the server logs plans | The CLI read the edited file but the old server did not. Pause, stop and wait for exit, restart, check the startup line, then resume. Check for exported variables overriding `.env`. |
+| Initial `publish` fails | Read the error code. Check the env values, team and label UUIDs, allowlist, team name, token and team access, 1–100 labeled non-archived issues, and distinct ranks. |
+| Allowed user's drag is repaired | Approvals are off (`roleApprovals=false` on the startup line), the webhook is missing or late, `check-actor` denies the user, or the change was mixed or stale. See step 11 and the `approval-rejected` reason. |
+| `resume` fails | It needs a baseline, an untripped breaker, and the current order matching the baseline. While paused, restore the approved order or intentionally `publish` a new one. Do not reach for `--restore` by default. |
+| `tripped: true` | Stop and inspect the audit log. The repair budget is 3 writes per check and 10 writes per 10 minutes, and 3 consecutive failed checks (for example, an expired token) also trip it. Once you understand the cause, pause, fix it, arrange the desired order, publish, and resume. Waiting or restarting alone does not clear it. |
+| Webhook returns 401 | Check the webhook's signing secret (it is not the OAuth client secret), restart after changing it, make sure the machine's clock is correct, and test with a fresh delivery. Polling keeps working meanwhile. |
+| Wrong team, label, or baseline in `status` | Check the working directory and `STATE_DIR`. Never run two state directories against the same protected issues. |
+| Lock error, or a command hangs then fails | A check may hold the lock; wait and retry (the wait is about 30 seconds). After an unclean kill, stop **every** process using that state directory before removing a confirmed stale `.state/lock` directory. Never remove an active lock or delete `.state` to fix a problem. |
 
-There are no `enable`, `disable`, `audit`, or `reset` CLI commands. Do not delete/edit `.state/state.json` to toggle modes. For corrupt state, preserve it for review and stop all processes before deciding on recovery.
+For corrupt state, preserve `.state/` for review and stop all processes before deciding how to recover.
 
-## Technical scope and limitations
+## Technical details and limitations
 
-- The baseline selects all non-archived labeled issues in the configured team, including completed issues. No project/status/cycle/assignee filtering. Maximum 100 baseline issues and 10,000 team issues including archived ones.
-- Relative protected order only: unprotected issues are not mutated but can appear in different positions among protected issues. Board columns, other filters/groupings, priority order, and sub-issue order are not equivalent to this baseline. Numeric baseline ranks are historical evidence, not an immutable lock.
-- The deterministic repair re-spaces protected issues from the current minimum with at least 1,024 rank units. It can move neighbours and is not a minimum-movement algorithm. One plan is kept per sweep and each write is preceded by a fresh read; a rank that is neither as first read nor as planned (a concurrent edit) causes a re-plan. Ties trigger repair; unrepresentable ranks fail closed. Large reorders can exceed the small budget and require review.
-- Role approvals depend on webhook evidence and are conservative: missed, late (after grace), stale, mixed, or anchor-mismatched events are repaired, not approved, and an allowed user's move that builds on someone else's unapproved drift is repaired too. A Linear-side re-rank that changes several issues is approved only if every change arrives as an allowed user's webhook. There is no CLI approval of an individual move; use pause/publish. Role lookups use public `user(id)` fields `active`, `app`, `admin`, `owner`, `organization`, and `teamMemberships` (`owner`, `archivedAt`, `team`); only the exact configured team counts, not parent teams, and more than 1,000 memberships fail closed for non-admins. Unknown users or lookup rejections are denied; lookup network failures count as a failed sweep. A `user` actor cannot distinguish UI drags from personal API keys. Role results are not cached between sweeps, so revoked roles apply on the next approval. Approval evidence is kept at most 10 minutes / 200 events and discarded on pause→resume and publish.
-- The server polls about every five seconds, with ten-second API timeouts. Repairs are eventual, not instantaneous or guaranteed within a fixed delay. There is **no atomic rank/team compare-and-set**: a concurrent edit or team move between a fresh team-scoped read and its update can still race. Pause before team moves. Publishing should happen during a quiet period while paused; paginated reads are not an atomic snapshot.
-- A shared local lock serializes CLI commands and sweeps. Use one server/local filesystem, not NFS or multiple machines. `.state/state.json` is replaced by atomic rename; `.state/audit.jsonl` contains IDs/ranks, not credentials. This supports process restart, not power-loss/fsync or distributed-transaction guarantees. Custom state directories need separate gitignore rules; audit retention/backups are operator responsibilities.
-- Webhooks verify raw-body hex HMAC-SHA256, with a signed integer millisecond `webhookTimestamp` within ±60 seconds; an optional `Linear-Timestamp` header must match. Body limit 1 MiB. Invalid authentication returns 401, oversized bodies 413, persistence failures 503. Relevant accepted events are persisted before acknowledgement. Best-effort delivery/header and byte deduplication keeps at most 4,000 keys. Periodic fresh reads maintain correctness independently of delivery headers or stale payload ranks; with role approvals on, actor identity from signed payloads decides only whether drift is accepted, after the fresh-read checks above.
-- The API uses public GraphQL `sortOrder`/`updatedAt` reads, read-only `viewer`/`user` role lookups, and `issueUpdate(id,input:{sortOrder})` writes only. Signature/schema conventions came from the supplied previous-session source excerpts: [WebhookUtils](https://github.com/linear/linear-app/blob/master/api/src/utils/WebhookUtils.ts), [IssueWebhookPresenter](https://github.com/linear/linear-app/blob/master/api/src/entity/presenters/IssueWebhookPresenter.ts), [public schema](https://github.com/linear/linear-app/blob/master/api/src/graphql/schema-public.gql). No Linear application code is imported.
+- **Selection.** The baseline is every non-archived issue in the team with the label, including completed issues, with no project, status, cycle, or assignee filtering. Removing the label from a baselined issue does not unprotect it, and newly labeled issues are not added, until the next `publish`.
+- **Repair.** Repairs re-space the protected issues from the current lowest rank, at least 1,024 rank units apart. This can move neighbors and is not a minimum-movement algorithm. Each write is preceded by a fresh read, and an unexpected rank (a concurrent edit) triggers a new plan. Ties trigger repair; unrepresentable ranks fail closed. Large reorders can exceed the write budget and trip the breaker for review.
+- **Concurrency.** There is no atomic compare-and-set in Linear for rank or team, so an edit or team move between a fresh read and an update can still race. Pause before moving protected issues to another team. A protected issue that is missing, archived, or moved out of the team counts as a failed check. Publish during a quiet period while paused; paginated reads are not an atomic snapshot.
+- **Timing.** The server checks about every five seconds with ten-second API timeouts. Repairs are eventual, not guaranteed within a fixed delay.
+- **Role approvals** are conservative: missed, late, stale, mixed, or anchor-mismatched events are repaired rather than approved, and an allowed user's move that builds on someone else's unapproved drift is repaired too. A change that re-ranks several issues is approved only if every change arrives as an allowed user's webhook. There is no CLI command to approve a single move; use pause and publish. Role lookups read `user(id)` fields (`active`, `app`, `admin`, `owner`, `organization`, and `teamMemberships`); only the exact protected team counts, not parent teams, and more than 1,000 memberships fail closed for non-admins. Lookups are not cached between checks, so revoked roles apply immediately. Approval evidence is kept for at most 10 minutes or 200 events, and is discarded on pause/resume and publish.
+- **State.** A local lock serializes CLI commands and checks; use one machine and a local filesystem, not NFS. `state.json` is replaced atomically, which survives process restarts but is not a power-loss or distributed guarantee.
+- **Webhooks.** The server verifies the hex HMAC-SHA256 `Linear-Signature` over the raw body and requires the signed `webhookTimestamp` to be within 60 seconds; a `Linear-Timestamp` header, if present, must match it. Bodies over 1 MiB get 413, failed verification 401, and persistence failures 503 (so Linear retries). Accepted events are saved before acknowledgment and deduplicated (up to 4,000 keys). Correctness comes from periodic fresh reads, not webhook payload ranks.
+- **API usage.** Reads issues (`sortOrder`, `updatedAt`, labels), the team, `viewer`, and `user` for role checks; writes only `issueUpdate(id, input: { sortOrder })`. The Authorization header is the literal `LINEAR_API_KEY` value; the service does not request or refresh tokens itself.
 
-No live Linear workspace mutations, ngrok delivery, or settings UI interaction was used to validate this implementation or documentation. Offline tests verify the mock paths; the optional live acceptance tests above remain for the operator.
+## References
+
+- [OAuth 2.0 authentication and client credentials tokens](https://linear.app/developers/oauth-2-0-authentication)
+- [OAuth actor authorization](https://linear.app/developers/oauth-actor-authorization)
+- [Webhooks, payloads, and signature verification](https://linear.app/developers/webhooks)
+- [GraphQL API](https://linear.app/developers/graphql) and [pagination](https://linear.app/developers/pagination)
