@@ -1,0 +1,11 @@
+{
+  "name": "linear-test-rank-guardrail",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file=.env src/cli.js serve",
+    "test": "node --test",
+    "build": "node --check src/guardrail.js && node --check src/cli.js"
+  }
+}
