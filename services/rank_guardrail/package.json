@@ -6,6 +6,6 @@
   "scripts": {
     "start": "node --env-file=.env src/cli.js serve",
     "test": "node --test",
-    "build": "node --check src/guardrail.js && node --check src/cli.js"
+    "build": "node --check src/guardrail.js && node --check src/cli.js && node --check src/roles.js && node --check src/errors.js"
   }
 }

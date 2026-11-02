@@ -1,8 +1,10 @@
 # Test the rank guardrail locally
 
-This experimental service remembers an approved issue order and checks whether it has changed. In dry run it only logs the repair it would make. With writes explicitly enabled, it tries to restore the approved **relative order**. Use disposable issues in one dedicated TEST team only. This is not a native ordering lock or a production integration.
+This experimental service remembers an approved issue order and checks whether it has changed. In dry run it only logs the repair it would make. With writes explicitly enabled, it tries to restore the approved **relative order**. Optionally (section 10), reorders made by workspace owners/admins and owners of the TEST team are accepted as the new approved order instead of being repaired. Use disposable issues in one dedicated TEST team only. This is not a native ordering lock or a production integration.
 
-## 1. Understand the four separate controls
+The guardrail only ever writes `sortOrder`. It never changes status, cycle, assignee, labels, or any other field, and it does not treat status or cycle changes as violations. (Adding an issue to a cycle no longer disturbs manual order, so there is no cycle-specific handling.)
+
+## 1. Understand the separate controls
 
 You do **not** edit `state.json` or change issue status to operate the guardrail. Use the commands below.
 
@@ -12,6 +14,7 @@ You do **not** edit `state.json` or change issue status to operate the guardrail
 | Paused | `.state/state.json`, changed with `pause` / `resume` | `paused: true`: no checks or repairs. `paused: false`: the running server may check the approved order. This is independent of dry run. |
 | Baseline | `.state/state.json`, set with `publish` | The saved ordered IDs of the issues to protect. Publishing accepts the current labeled subset and its current order. It does not reorder issues in Linear. |
 | Server running | The terminal running `npm start` | Only this long-running process checks/repairs ranks. CLI commands such as `resume` do not start a server. |
+| Role approvals | `ROLE_APPROVALS` in `.env`, read when each process starts | Off unless exactly `true`. When on, a provable reorder by an allowed role becomes the new approved order (section 10). Off: every protected reorder is repaired, whoever made it. |
 
 **Real repairs require all of these:** a running server, a published baseline, `paused: false`, the server started with `DRY_RUN=false`, and `tripped: false` (the safety breaker has not stopped it).
 
@@ -50,6 +53,8 @@ PROTECTED_LABEL_ID=REPLACE_WITH_LABEL_UUID
 LINEAR_API_KEY=REPLACE_WITH_RESTRICTED_TEST_API_KEY
 WEBHOOK_SECRET=REPLACE_WITH_LOCAL_RANDOM_SECRET_OR_REAL_WEBHOOK_SECRET
 DRY_RUN=true
+ROLE_APPROVALS=false
+APPROVAL_GRACE_MS=10000
 STATE_DIR=.state
 PORT=8787
 ```
@@ -59,6 +64,7 @@ PORT=8787
 - `WEBHOOK_SECRET` is required even when testing without a webhook. For the polling-only test, use a local random value, for example generate one with `openssl rand -hex 32` and paste it into `.env`. When adding a real webhook later, replace it with that webhook's actual signing secret and restart.
 - Keep `.env` private. Do not paste your key or signing secret into chat. `.env` and `.state/` are gitignored.
 - Leave `DRY_RUN=true` for now. Missing, misspelled, or upper-case values do not opt into writes; only the exact value `false` does.
+- Leave `ROLE_APPROVALS=false` until section 10. It accepts only `true` or `false`; anything else is a configuration error. `APPROVAL_GRACE_MS` (0–60000, default 10000) only matters when approvals are on.
 - These instructions assume `STATE_DIR=.state` and `PORT=8787`. If you change either, adapt the file paths/port everywhere below.
 
 If needed, these read-only queries in a GraphQL API client help locate IDs:
@@ -84,7 +90,17 @@ Replace the example path with your actual checkout. Both terminals must use the 
 - **Terminal 1:** runs the server and stays open.
 - **Terminal 2:** runs short CLI commands and inspects results.
 
-There is no HTTP dashboard or HTTP management endpoint. The CLI commands are `status`, `pause`, `publish`, `resume`, and `serve` (`npm start` runs `serve`). There is no `audit` command: read the audit file as shown below.
+There is no HTTP dashboard or HTTP management endpoint. The CLI commands are `status`, `pause`, `publish`, `resume`, `check-actor <user-uuid>`, and `serve` (`npm start` runs `serve`). There is no `audit` command: read the audit file as shown below.
+
+**Operator trust.** Anyone who can run these CLI commands with this `.env` and state directory is a trusted operator: `pause`, `publish`, and `resume --restore` are not role-checked. Role checks apply only to reorders made inside Linear and reported by webhook. Protect the checkout, `.env`, and `.state/` with filesystem permissions.
+
+Direct mode/state check (read-only, safe at any time):
+
+```sh
+node --env-file=.env src/cli.js status
+```
+
+It prints `paused`, `tripped`, `dryRun`, `roleApprovals`, `approvalGraceMs`, the saved `baseline`, and counts of pending approval events, own-write intents, and recent repair writes. `dryRun`/`roleApprovals` describe the `.env` this CLI process read; the running server's modes are on its startup line.
 
 ## 5. Publish your first baseline, then start in dry run
 
@@ -115,7 +131,7 @@ npm start
 Wait for:
 
 ```text
-Listening on localhost:8787; dryRun=true
+Listening on localhost:8787; dryRun=true; roleApprovals=false; approvalGraceMs=10000
 ```
 
 Leave Terminal 1 running. The server checks immediately and about every five seconds after that. **A webhook and ngrok are not needed for this first test**: polling reads current order directly from Linear.
@@ -159,7 +175,7 @@ Still in **Terminal 1**, restart:
 npm start
 ```
 
-Confirm the startup line now ends in **`dryRun=false`**. It is still paused because pause state survives restarts.
+Confirm the startup line now shows **`dryRun=false`**. It is still paused because pause state survives restarts.
 
 **Terminal 2:**
 
@@ -227,14 +243,52 @@ curl -i -X POST http://127.0.0.1:8787/webhook \
 
 There is no browser home page or health endpoint; other routes return 404. If the ngrok hostname changes, update the webhook URL.
 
-## 10. Additional acceptance checks
+## 10. Optional: role-aware approvals
+
+With `ROLE_APPROVALS=true`, a reorder of protected issues is **accepted** (becomes the new baseline, no repair) only when the guardrail can prove who made it. Everyone else's reorders are repaired as before. This needs the working webhook from section 9: polling alone cannot tell who moved an issue, so without a webhook every move is repaired after the grace period.
+
+**Who may reorder.** An active, non-app user in the same workspace as the API key who is a workspace **owner**, workspace **admin**, or **owner (team admin) of exactly the configured TEST team** through an active membership. Owners of other teams (including parent teams), members, inactive/suspended users, app users, users from other workspaces, unknown users, and non-user actors (`integration`, `oauthClient`, `externalUser`, or none) are denied. The API key's own user is always denied, so its writes can never approve themselves; use a dedicated key user, because the operator's own UI drags are indistinguishable from API calls made with their personal key.
+
+> **Free plan caveat:** on the Free plan Linear reports every member as an admin, so every active member would be allowed to reorder. Use a paid-plan test workspace, or leave approvals off.
+
+**What counts as proof.** All of these must hold, checked on a fresh read under the state lock:
+
+- A signed Issue `update` webhook whose `updatedFrom.sortOrder` and `data.sortOrder` are both numbers and differ, for a baseline issue whose `data.teamId` is the TEST team. Status-, cycle- or assignee-only events carry no rank change and can never approve anything, including drift made by someone else at the same time.
+- Its previous rank equals the guardrail's trusted anchor for that issue (the last rank seen in approved order), and following webhook steps from that anchor reaches the issue's current rank, with the last step's `updatedAt` equal to the issue's current `updatedAt` (no later unseen update).
+- Every protected issue whose rank differs from its anchor is explained this way, and every step's actor is allowed. Mixed changes (an allowed move plus any unexplained or denied move) are rejected as a whole and repaired; the guardrail never accepts a whole snapshot.
+- The new order has distinct ranks. Webhooks for the guardrail's own repair writes (persisted as intents before each write) are ignored.
+
+Approval changes only the order of the existing baseline IDs and their anchors in local state. It never adds or removes protected issues and never writes to Linear. It survives polling and restarts. In dry run, approvals still update the local baseline (no Linear writes), so you can test roles without enabling repairs.
+
+**Grace period.** Polling can see a move before its webhook arrives. While some drift is unexplained, the server waits up to `APPROVAL_GRACE_MS` (from first detection, audited as `approval-wait`) before repairing. A webhook that arrives later than that is stale: the move has been repaired and the event cannot approve anything. Grace reduces, but cannot eliminate, this race.
+
+**Test it (TEST issues only).** Pause, set `ROLE_APPROVALS=true` in `.env`, restart the server, confirm the startup line shows `roleApprovals=true`, then resume. Check roles directly first (read-only; prints `allowed` and a `reason` such as `workspace-admin`, `team-owner`, `not-owner-admin-or-team-owner`):
+
+```sh
+node --env-file=.env src/cli.js check-actor ADMIN_USER_UUID
+node --env-file=.env src/cli.js check-actor MEMBER_USER_UUID
+```
+
+Then, as an allowed user, drag C above A; as a member, drag B to the top. Inspect:
+
+```sh
+node --env-file=.env src/cli.js status
+grep -E 'approved-move|approval-rejected|approval-wait|own-callback' .state/audit.jsonl | tail -n 20
+```
+
+Expect an `approved-move` for the allowed user's drag (baseline C, A, B, no repair), and an `approval-rejected` with reason `unauthorized-actor` (or `unexplained-rank-change` if the webhook was missing) for the member's drag, followed by a repair back to C, A, B (or `would-repair` in dry run). Audit entries contain issue and user UUIDs and role reasons, never names, emails, or secrets.
+
+If an allowed move is repaired anyway, check: the webhook delivered within the grace period (section 9); the delivery payload includes `updatedFrom.sortOrder` (if Linear omits it, approvals fail closed); nobody else changed protected issues at the same time; and nothing else updated the moved issue afterwards. When in doubt use the manual path: `pause`, arrange, `publish`, `resume`.
+
+## 11. Additional acceptance checks
 
 Use only disposable test issues. Avoid repeated live drags: they can exhaust the write budget. The mock tests cover retries, contention, and duplicate callbacks without spending that budget.
 
 - **Other fields stay changed:** change B's status, cycle, and assignee, then disturb the approved order. After repair, those field changes should remain. The service sends only `{sortOrder}` in its update input.
 - **Label removal stays protected:** remove the label from an issue already in the baseline and disturb its rank. It remains protected by saved ID. New labeled issues are not automatically added either. Only a later explicit paused `publish` updates membership.
 - **Restart persists settings:** pause, stop/restart Terminal 1, and inspect `status`. Baseline and `paused: true` survive. Resume explicitly for further checks. Pending/missed events are recovered by periodic reads.
-- **Duplicates/own callbacks:** run `npm test` for signed HTTP, retry deduplication, fresh reads instead of stale webhook ranks, and no additional writes once approved order is restored.
+- **Duplicates/own callbacks:** run `npm test` for signed HTTP, retry deduplication, fresh reads instead of stale webhook ranks, own-write intents, and no additional writes once approved order is restored.
+- **Roles (offline):** `npm test` covers allowed owners/admins/exact team owners; denied other-team owners, members, inactive, app, foreign, unknown and non-user actors; status/cycle-only events not approving drift; combined rank+status changes; own callbacks; mixed, missed, stale and chained events; approval surviving polling/restart; unchanged membership; and sanitized errors.
 - **Missing/moved/archived issues:** tested with mocks. In live testing, pause before deliberately moving a protected issue out of the team; do not rely on a team-move race being atomic. A missing baseline issue on a fresh read fails closed, and three consecutive failed sweeps trip the breaker.
 
 ## Troubleshooting: inspect first, do not edit state by hand
@@ -246,7 +300,23 @@ node --env-file=.env src/cli.js status
 tail -n 20 .state/audit.jsonl
 ```
 
-The audit file may not exist until the first successful state-changing command. A CLI failure deliberately prints a generic message and exits nonzero; it does not expose API response details or credentials.
+The audit file may not exist until the first successful state-changing command. A CLI failure prints `Command failed (<code>: <reason>)` and exits nonzero. Reasons name configuration variables and HTTP status codes but never their values, API response text, or credentials; anything unexpected prints `unexpected-error` with a generic hint.
+
+| Code | Meaning / next step |
+| --- | --- |
+| `config` | A named `.env` value is missing, still a `REPLACE_WITH_` placeholder, not allowlisted, or invalid (`ROLE_APPROVALS`, `APPROVAL_GRACE_MS`, `PORT`). |
+| `team-name` | The team name must contain `TEST` as a separate word (`Rank Guardrail TEST`; not `Testing` or `MyTest`). Rename the test team. |
+| `team-mismatch` | Linear returned a different team: `TEST_TEAM_ID` must be the team UUID, not its key or name. |
+| `api-http` | Linear API HTTP status, e.g. 401 (check key), 403 (key lacks team access), 429 (wait), 5xx (retry later). |
+| `api-network` / `api-response` | No connection or timeout / unreadable response. Retry. |
+| `api-graphql` | Linear rejected the query: check UUIDs and key permissions. Details are intentionally hidden. |
+| `pause-required` | Run `pause`, wait for `"paused": true`, then `publish`. |
+| `label-count` | Publish needs 1–100 non-archived issues with the label in the TEST team; the message shows how many were found. |
+| `rank-collision` | Protected issues share a rank: drag them into a distinct order while paused, then publish. |
+| `order-changed` / `no-baseline` / `breaker-tripped` | See the `resume` and `tripped` rows below. |
+| `state-scope` | This `STATE_DIR` belongs to another team/label. Use a separate directory. |
+| `state-lock` / `state-unreadable` | See the lock row below / preserve `state.json` and stop all processes. |
+| `usage` | Unknown command or argument. |
 
 | Symptom | Check / next step |
 | --- | --- |
@@ -254,7 +324,8 @@ The audit file may not exist until the first successful state-changing command. 
 | No checks, `paused: true` | Check the approved/current order, then run `resume`. Changing `.env` alone will not resume. |
 | `paused: false`, but nothing happens | Is Terminal 1 still running? Is there a nonempty baseline? Is `tripped` false? Check the Manual ungrouped view, startup line, and audit. |
 | `status` says `dryRun: false` but server logs plans | The CLI read the edited file, but the old server did not. Pause, stop and wait for exit, restart, verify its startup line, then resume as appropriate. Check for inherited exported variables overriding `.env`. |
-| Initial `publish` fails | Verify all five required env values, actual team/label UUIDs, allowlist match, TEST in the team name, API permissions/connectivity, 1–100 labeled non-archived issues, and distinct finite ranks. |
+| Initial `publish` fails | Read the error code above. Verify all five required env values, actual team/label UUIDs, allowlist match, TEST as a separate word in the team name, API permissions/connectivity, 1–100 labeled non-archived issues, and distinct finite ranks. |
+| Allowed user's drag is repaired | Approvals are off (`roleApprovals=false` on the startup line), the webhook is missing/late, the actor check fails (`check-actor`), or the change was mixed/stale. See section 10 and the `approval-rejected` audit reason. |
 | `publish` fails after previous testing | It requires `paused: true`. Run `pause` successfully first. |
 | `resume` fails | It requires a baseline, an untripped breaker, and the current protected relative order matching the baseline. While paused, restore the approved order manually, or intentionally `publish` the new desired order. Do not automatically use `--restore`. |
 | `tripped: true` | Stop experimenting. Inspect audit and issue eligibility. Repair budget is 3 writes per sweep / 10 attempted writes in 10 minutes; 3 consecutive failed sweeps also trip it. After understanding the cause, pause, arrange the desired eligible subset, publish deliberately, inspect, then resume. Waiting/restarting alone does not clear a tripped breaker. |
@@ -268,10 +339,11 @@ There are no `enable`, `disable`, `audit`, or `reset` CLI commands. Do not delet
 
 - The baseline selects all non-archived labeled issues in the configured team, including completed issues. No project/status/cycle/assignee filtering. Maximum 100 baseline issues and 10,000 team issues including archived ones.
 - Relative protected order only: unprotected issues are not mutated but can appear in different positions among protected issues. Board columns, other filters/groupings, priority order, and sub-issue order are not equivalent to this baseline. Numeric baseline ranks are historical evidence, not an immutable lock.
-- The deterministic repair re-spaces protected issues from the current minimum with at least 1,024 rank units. It can move neighbours and is not a minimum-movement algorithm. Ties trigger repair; unrepresentable ranks fail closed. Large reorders can exceed the small budget and require review.
+- The deterministic repair re-spaces protected issues from the current minimum with at least 1,024 rank units. It can move neighbours and is not a minimum-movement algorithm. One plan is kept per sweep and each write is preceded by a fresh read; a rank that is neither as first read nor as planned (a concurrent edit) causes a re-plan. Ties trigger repair; unrepresentable ranks fail closed. Large reorders can exceed the small budget and require review.
+- Role approvals depend on webhook evidence and are conservative: missed, late (after grace), stale, mixed, or anchor-mismatched events are repaired, not approved, and an allowed user's move that builds on someone else's unapproved drift is repaired too. A Linear-side re-rank that changes several issues is approved only if every change arrives as an allowed user's webhook. There is no CLI approval of an individual move; use pause/publish. Role lookups use public `user(id)` fields `active`, `app`, `admin`, `owner`, `organization`, and `teamMemberships` (`owner`, `archivedAt`, `team`); only the exact configured team counts, not parent teams, and more than 1,000 memberships fail closed for non-admins. Unknown users or lookup rejections are denied; lookup network failures count as a failed sweep. A `user` actor cannot distinguish UI drags from personal API keys. Role results are not cached between sweeps, so revoked roles apply on the next approval. Approval evidence is kept at most 10 minutes / 200 events and discarded on pause→resume and publish.
 - The server polls about every five seconds, with ten-second API timeouts. Repairs are eventual, not instantaneous or guaranteed within a fixed delay. There is **no atomic rank/team compare-and-set**: a concurrent edit or team move between a fresh team-scoped read and its update can still race. Pause before team moves. Publishing should happen during a quiet period while paused; paginated reads are not an atomic snapshot.
 - A shared local lock serializes CLI commands and sweeps. Use one server/local filesystem, not NFS or multiple machines. `.state/state.json` is replaced by atomic rename; `.state/audit.jsonl` contains IDs/ranks, not credentials. This supports process restart, not power-loss/fsync or distributed-transaction guarantees. Custom state directories need separate gitignore rules; audit retention/backups are operator responsibilities.
-- Webhooks verify raw-body hex HMAC-SHA256, with a signed integer millisecond `webhookTimestamp` within ±60 seconds; an optional `Linear-Timestamp` header must match. Body limit 1 MiB. Invalid authentication returns 401, oversized bodies 413, persistence failures 503. Relevant accepted events are persisted before acknowledgement. Best-effort delivery/header and byte deduplication keeps at most 4,000 keys. Periodic fresh reads maintain correctness independently of delivery headers, stale payload ranks, or actor identity.
-- The API uses public GraphQL `sortOrder` reads and `issueUpdate(id,input:{sortOrder})` writes only. Signature/schema conventions came from the supplied previous-session source excerpts: [WebhookUtils](https://github.com/linear/linear-app/blob/master/api/src/utils/WebhookUtils.ts), [IssueWebhookPresenter](https://github.com/linear/linear-app/blob/master/api/src/entity/presenters/IssueWebhookPresenter.ts), [public schema](https://github.com/linear/linear-app/blob/master/api/src/graphql/schema-public.gql). No Linear application code is imported.
+- Webhooks verify raw-body hex HMAC-SHA256, with a signed integer millisecond `webhookTimestamp` within ±60 seconds; an optional `Linear-Timestamp` header must match. Body limit 1 MiB. Invalid authentication returns 401, oversized bodies 413, persistence failures 503. Relevant accepted events are persisted before acknowledgement. Best-effort delivery/header and byte deduplication keeps at most 4,000 keys. Periodic fresh reads maintain correctness independently of delivery headers or stale payload ranks; with role approvals on, actor identity from signed payloads decides only whether drift is accepted, after the fresh-read checks above.
+- The API uses public GraphQL `sortOrder`/`updatedAt` reads, read-only `viewer`/`user` role lookups, and `issueUpdate(id,input:{sortOrder})` writes only. Signature/schema conventions came from the supplied previous-session source excerpts: [WebhookUtils](https://github.com/linear/linear-app/blob/master/api/src/utils/WebhookUtils.ts), [IssueWebhookPresenter](https://github.com/linear/linear-app/blob/master/api/src/entity/presenters/IssueWebhookPresenter.ts), [public schema](https://github.com/linear/linear-app/blob/master/api/src/graphql/schema-public.gql). No Linear application code is imported.
 
 No live Linear workspace mutations, ngrok delivery, or settings UI interaction was used to validate this implementation or documentation. Offline tests verify the mock paths; the optional live acceptance tests above remain for the operator.
