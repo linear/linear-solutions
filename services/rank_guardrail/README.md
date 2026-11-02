@@ -444,6 +444,7 @@ The audit file may not exist until the first successful state-changing command. 
 
 | Symptom | Check / next step |
 | --- | --- |
+| `node: .env.oauth: not found` | The helper reads `.env.oauth` from the current directory. `cd` into `services/rank_guardrail` and create the file there (step 3.2). |
 | Token request fails | `Client does not support the client_credentials grant type`: turn on client credentials tokens for the app. `Invalid client`: check `.env.oauth`, or the secret was rotated. |
 | No repair, `would-repair` appears | The server is in dry run. Use step 8 if you want real writes. |
 | No checks, `paused: true` | Check the approved and current order, then run `resume`. Editing `.env` alone does not resume. |
