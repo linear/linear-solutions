@@ -27,6 +27,9 @@ test('protected teams are explicit team:label pairs and dry-run fails closed', (
   assert.equal(config(env).dry, true);
   assert.equal(config({ ...env, DRY_RUN: 'FALSE' }).dry, true);
   assert.equal(config({ ...env, DRY_RUN: 'false' }).dry, false);
+  assert.equal(config(env).key, 'Bearer key');
+  assert.equal(config({ ...env, LINEAR_API_KEY: 'Bearer key' }).key, 'Bearer key');
+  assert.equal(config({ ...env, LINEAR_API_KEY: 'lin_api_key' }).key, 'lin_api_key');
   const cfg = config({ ...env, PROTECTED_TEAMS: ' t1:l1, t2 : l1 ,t3:l3', STATE_DIR: '/tmp/rank-state' });
   assert.deepEqual(cfg.teams, [{ team: 't1', label: 'l1' }, { team: 't2', label: 'l1' }, { team: 't3', label: 'l3' }]);
   assert.deepEqual(teamConfig(cfg, cfg.teams[1]), { ...cfg, team: 't2', label: 'l1', dir: '/tmp/rank-state/t2' });
