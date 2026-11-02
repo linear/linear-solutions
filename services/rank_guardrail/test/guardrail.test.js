@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
-import { config, verify, Store, Guardrail, LinearApi, plan, inOrder } from '../src/guardrail.js';
+import { config, verify, Store, Guardrail, LinearApi, plan, inOrder, authorization } from '../src/guardrail.js';
 import { server } from '../src/cli.js';
 
 async function fixture(t, dry = false) {
@@ -154,6 +154,19 @@ test('API paginates and only ever sends sortOrder as mutation input', async () =
   });
   assert.equal((await api.issues()).length, 2); await api.update('a', 42);
   assert.deepEqual(requests[2].variables, { id: 'a', input: { sortOrder: 42 } });
+});
+
+test('OAuth app tokens use Bearer; personal API keys are sent as-is', async () => {
+  assert.equal(authorization('lin_oauth_abc'), 'Bearer lin_oauth_abc');
+  assert.equal(authorization('Bearer lin_oauth_abc'), 'Bearer lin_oauth_abc');
+  assert.equal(authorization('lin_api_abc'), 'lin_api_abc');
+  let header;
+  const api = new LinearApi({ key: 'lin_oauth_abc', team: 't' }, async (_url, opts) => {
+    header = opts.headers.Authorization;
+    return { ok: true, json: async () => ({ data: { viewer: { id: 'v' } } }) };
+  });
+  await api.viewer();
+  assert.equal(header, 'Bearer lin_oauth_abc');
 });
 
 test('HTTP rejects unsigned events; signed event acknowledged only after acceptance', async t => {

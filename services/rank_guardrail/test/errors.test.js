@@ -41,7 +41,7 @@ test('config errors name the variable, never its value', async () => {
 test('API HTTP, network, GraphQL and team errors are specific but hide response details', async () => {
   const api = (respond, team = 'team') => new LinearApi({ key: KEY, team }, respond);
   const http = status => async () => ({ ok: false, status, json: async () => ({ errors: [{ message: KEY }] }) });
-  await rejectsSafely(api(http(401)).team(), 'api-http', /HTTP 401 \(check LINEAR_API_KEY\)/);
+  await rejectsSafely(api(http(401)).team(), 'api-http', /HTTP 401 \(check LINEAR_API_KEY; OAuth app tokens expire/);
   await rejectsSafely(api(http(403)).issues(), 'api-http', /HTTP 403/);
   await rejectsSafely(api(http(503)).team(), 'api-http', /HTTP 503 \(Linear API unavailable/);
   await rejectsSafely(api(async () => { throw new Error(`connect failed ${KEY}`); }).team(), 'api-network', /network/);

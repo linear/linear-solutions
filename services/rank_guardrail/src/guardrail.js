@@ -89,11 +89,16 @@ export class Store {
   }
 }
 
-const HTTP_HINTS = { 400: 'check team/label UUIDs', 401: 'check LINEAR_API_KEY', 403: 'the API key lacks access to this team or operation',
+const HTTP_HINTS = { 400: 'check team/label UUIDs', 401: 'check LINEAR_API_KEY; OAuth app tokens expire and must be renewed', 403: 'the token lacks access to this team or operation',
   429: 'rate limited; wait before retrying' };
 
 const USER_QUERY = `query($id:String!,$after:String){user(id:$id){id active app admin owner organization{id}
 teamMemberships(first:100,after:$after,includeArchived:false){nodes{owner archivedAt team{id}} pageInfo{hasNextPage endCursor}}}}`;
+
+// OAuth app tokens (recommended) need the Bearer scheme; personal API keys (lin_api_) are sent as-is.
+export function authorization(key) {
+  return key.startsWith('lin_api_') || key.startsWith('Bearer ') ? key : `Bearer ${key}`;
+}
 
 export class LinearApi {
   constructor(cfg, fetcher = fetch) { this.cfg = cfg; this.fetcher = fetcher; }
@@ -101,7 +106,7 @@ export class LinearApi {
     let res;
     try {
       res = await this.fetcher('https://api.linear.app/graphql', {
-        method: 'POST', headers: { Authorization: this.cfg.key, 'Content-Type': 'application/json' },
+        method: 'POST', headers: { Authorization: authorization(this.cfg.key), 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(10000),
       });
     } catch {
