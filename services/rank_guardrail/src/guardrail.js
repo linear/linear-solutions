@@ -35,8 +35,14 @@ export function config(env = process.env) {
     fail('config', 'APPROVAL_GRACE_MS must be a whole number of milliseconds from 0 to 60000');
   }
   const dir = resolve(env.STATE_DIR || '.state');
-  return { teams, key: env.LINEAR_API_KEY,
+  return { teams, key: authorization(env.LINEAR_API_KEY),
     secret: env.WEBHOOK_SECRET, dry: env.DRY_RUN !== 'false', approvals: env.ROLE_APPROVALS === 'true', graceMs, dir };
+}
+
+// A pasted OAuth app key is sent as `Bearer <key>`. Personal API keys (lin_api_) and values
+// that already name a scheme (`Bearer ...`) are sent unchanged.
+function authorization(key) {
+  return /\s/.test(key) || key.startsWith('lin_api_') ? key : `Bearer ${key}`;
 }
 
 // Each protected team runs as an independent guardrail with its own state directory, lock,
