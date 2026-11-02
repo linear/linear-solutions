@@ -46,10 +46,9 @@ A new state directory starts paused, without a baseline. Restarting the server k
 
 ## 1. Install
 
-From the repository root:
-
 ```sh
-cd services/rank_guardrail
+git clone https://github.com/linear/linear-solutions.git
+cd linear-solutions/services/rank_guardrail
 npm ci --ignore-scripts
 npm run build
 npm test
@@ -57,7 +56,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Only copy `.env.example` for a new setup; do not overwrite an existing `.env`. The package has no runtime dependencies. `npm run build` checks JavaScript syntax, and `npm test` uses mocks and local HTTP only: no Linear API calls and no changes to real issues.
+Run every command in this guide from `services/rank_guardrail`. Only copy `.env.example` for a new setup; do not overwrite an existing `.env`. The package has no runtime dependencies. `npm run build` checks JavaScript syntax, and `npm test` uses mocks and local HTTP only: no Linear API calls and no changes to real issues.
 
 ## 2. Prepare the team, label, and view
 
@@ -69,7 +68,11 @@ In Linear:
 
 ## 3. Create and authorize a Linear OAuth app
 
-The guardrail authenticates as a Linear **OAuth application** using the [client credentials grant](https://linear.app/developers/oauth-2-0-authentication#client-credentials-tokens). This gives the service its own app identity instead of a person's account: its repairs appear as made by the app, and its access can be managed or revoked without affecting anyone's personal access.
+The guardrail authenticates as a Linear **OAuth application** using the [client credentials grant](https://linear.app/developers/oauth-2-0-authentication#client-credentials-tokens). Use this rather than a personal API key:
+
+- **Not tied to a person.** The service acts as the app's own user, so it keeps working if the person who set it up leaves, and its repairs show up as the app in issue history.
+- **Your own reorders can be approved.** With a personal key, your drags in Linear look identical to the guardrail's writes, so role-aware approvals always deny them. The app user is never an allowed approver, so repairs still can't approve themselves.
+- **Least privilege and easy revocation.** Request only `read,write`, manage the app's team access from its details page, and rotate or remove it in Linear settings without touching anyone's account.
 
 1. Open [Settings → API → OAuth applications → New](https://linear.app/settings/api/applications/new) and create an application, for example `Rank guardrail`.
    - Turn on **client credentials tokens**. Without it, token requests fail with `Client does not support the client_credentials grant type`.
@@ -114,7 +117,7 @@ PORT=8787
 - `WEBHOOK_SECRET` is required even without a webhook. Until you set one up, use a random value, for example from `openssl rand -hex 32`. When you add the webhook (step 10), replace it with that webhook's signing secret and restart.
 - Leave `DRY_RUN=true` for now. Missing, misspelled, or upper-case values never enable writes; only the exact value `false` does.
 - Leave `ROLE_APPROVALS=false` until step 11. It accepts only `true` or `false`. `APPROVAL_GRACE_MS` (0–60000, default 10000) only matters when approvals are on.
-- This guide assumes `STATE_DIR=.state` and `PORT=8787`. If you change either, adapt the paths and port below. A custom state directory outside `.state/` is not covered by `.gitignore`.
+- This guide assumes `STATE_DIR=.state` and `PORT=8787` (allowed range 1024–65535). If you change either, adapt the paths and port below. A custom state directory outside `.state/` is not covered by `.gitignore`.
 
 Keep `.env` private. `.env` and `.state/` are gitignored.
 
@@ -122,12 +125,19 @@ To look up the UUIDs, load a token as shown in step 5, then run these read-only 
 
 ```sh
 curl -s https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
-  --data '{"query":"{ teams { nodes { id name key } } }"}'
+  --data '{"query":"{ teams(first: 100) { nodes { id name key } } }"}'
 curl -s https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
-  --data '{"query":"{ issueLabels { nodes { id name team { id } } } }"}'
+  --data '{"query":"{ issueLabels(first: 100) { nodes { id name team { id } } } }"}'
 ```
 
-Both are [paginated](https://linear.app/developers/pagination); request further pages if your team or label is not in the first one. The service itself never creates teams, issues, labels, OAuth apps, or webhooks.
+For role-aware approvals (step 11) you will also want a few user UUIDs to test with:
+
+```sh
+curl -s https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' \
+  --data '{"query":"{ users(first: 100) { nodes { id name admin } } }"}'
+```
+
+These lists are [paginated](https://linear.app/developers/pagination); request further pages if what you need is not on the first one. The app only sees teams it has access to. The service itself never creates teams, issues, labels, OAuth apps, or webhooks.
 
 ## 5. Load an access token in each terminal
 
@@ -359,7 +369,7 @@ If an allowed move is repaired anyway, check that the webhook arrived within the
 ## 12. Run it for longer
 
 - **Token lifetime.** Restart with a freshly fetched token at least every 30 days: `pause`, stop the server, load a new token (step 5), `npm start`, `resume`. If the token expires or is revoked while the server is running, API calls return 401, and after three consecutive failed checks the safety breaker trips. To recover, `pause`, restart with a new token, review the order, `publish`, and `resume`.
-- **Hosting.** Keep a single server process on one machine with a local disk, started from this directory with the same `.env` and `.state/`. If you use a process supervisor, have it fetch a new token with the helper above before each start rather than storing a token in a file.
+- **Hosting.** Keep exactly one server process per state directory, on one machine with a local disk (no NFS or multiple replicas), started from this directory with the same `.env` and `.state/`. A process manager (systemd, launchd, or a container with a persistent volume for `STATE_DIR`) can restart it after a crash; saved state is picked up and polling recovers missed events. Have it fetch a new token with the helper above before each start rather than storing a token in a file. [`services/linear-token-renew`](../linear-token-renew) shows token-renewal patterns you can adapt.
 - **Revoking access.** To stop the guardrail from changing Linear, `pause` it. To cut off its API access entirely, rotate the OAuth app's client secret (which immediately invalidates its client credentials tokens) or delete the app.
 - **Records.** `.state/audit.jsonl` contains issue IDs, ranks, and user UUIDs, not credentials. Retention and backups are up to you.
 
@@ -401,7 +411,9 @@ The audit file may not exist until the first successful state-changing command. 
 | `pause-required` | Run `pause`, wait for `"paused": true`, then `publish`. |
 | `label-count` | Publish needs 1–100 non-archived issues with the label in the team; the message shows how many were found. |
 | `rank-collision` | Protected issues share a rank: while paused, drag them into a distinct order, then publish. |
-| `order-changed` / `no-baseline` / `breaker-tripped` | See the `resume` and `tripped` rows below. |
+| `order-changed` | `resume` found a different order. Restore the approved order while paused, or `publish` the new order on purpose. |
+| `no-baseline` | Run `pause`, then `publish` first. |
+| `breaker-tripped` | See the `tripped: true` row below. |
 | `state-scope` | This `STATE_DIR` belongs to another team or label. Use a separate directory. |
 | `state-lock` / `state-unreadable` | See the lock row below / preserve `state.json` and stop all processes. |
 | `usage` | Unknown command or argument. |
