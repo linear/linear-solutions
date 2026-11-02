@@ -10,15 +10,21 @@ const INTENT_TTL_MS = 600000;
 const MAX_CANDIDATES = 200;
 const MAX_CHAIN = 20;
 
+// PROTECTED_TEAMS lists one team-UUID:label-UUID pair per protected team, comma-separated.
 export function config(env = process.env) {
-  const team = env.TEST_TEAM_ID;
-  if (!team) fail('config', 'TEST_TEAM_ID is missing in .env');
-  if (!env.TEST_TEAM_ALLOWLIST?.split(',').map(x => x.trim()).includes(team)) {
-    fail('config', 'TEST_TEAM_ID must be explicitly allowlisted: repeat the same team UUID in TEST_TEAM_ALLOWLIST');
-  }
-  for (const name of ['TEST_TEAM_ID', 'PROTECTED_LABEL_ID', 'LINEAR_API_KEY', 'WEBHOOK_SECRET']) {
+  for (const name of ['PROTECTED_TEAMS', 'LINEAR_API_KEY', 'WEBHOOK_SECRET']) {
     if (!env[name]) fail('config', `${name} is missing in .env`);
-    if (env[name].startsWith('REPLACE_WITH_')) fail('config', `${name} still contains its REPLACE_WITH_ placeholder`);
+    if (env[name].includes('REPLACE_WITH_')) fail('config', `${name} still contains its REPLACE_WITH_ placeholder`);
+  }
+  const teams = env.PROTECTED_TEAMS.split(',').map(entry => {
+    const [team, label, ...rest] = entry.trim().split(':').map(x => x.trim());
+    if (!ID.test(team ?? '') || !ID.test(label ?? '') || rest.length) {
+      fail('config', 'PROTECTED_TEAMS must be comma-separated <team-uuid>:<label-uuid> pairs');
+    }
+    return { team, label };
+  });
+  if (new Set(teams.map(t => t.team)).size !== teams.length) {
+    fail('config', 'PROTECTED_TEAMS lists a team more than once; use one label per team');
   }
   if (env.ROLE_APPROVALS !== undefined && !['', 'true', 'false'].includes(env.ROLE_APPROVALS)) {
     fail('config', 'ROLE_APPROVALS must be exactly true or false (lower case)');
@@ -29,8 +35,14 @@ export function config(env = process.env) {
     fail('config', 'APPROVAL_GRACE_MS must be a whole number of milliseconds from 0 to 60000');
   }
   const dir = resolve(env.STATE_DIR || '.state');
-  return { team, label: env.PROTECTED_LABEL_ID, key: env.LINEAR_API_KEY,
+  return { teams, key: env.LINEAR_API_KEY,
     secret: env.WEBHOOK_SECRET, dry: env.DRY_RUN !== 'false', approvals: env.ROLE_APPROVALS === 'true', graceMs, dir };
+}
+
+// Each protected team runs as an independent guardrail with its own state directory, lock,
+// audit log, baseline, pause flag, and safety breaker.
+export function teamConfig(cfg, { team, label }) {
+  return { ...cfg, team, label, dir: join(cfg.dir, team) };
 }
 
 export function verify(raw, signature, timestamp, secret, now = Date.now()) {
@@ -71,7 +83,7 @@ export class Store {
     if (!state) state = { version: 1, team: this.cfg.team, label: this.cfg.label, paused: true,
       baseline: [], seen: [], pending: false, failures: 0, tripped: false };
     if (state.version !== 1 || state.team !== this.cfg.team || state.label !== this.cfg.label) {
-      fail('state-scope', 'State scope mismatch: this STATE_DIR belongs to a different team or label; use a separate STATE_DIR');
+      fail('state-scope', 'State scope mismatch: this team\'s state belongs to a different team or label; restore the PROTECTED_TEAMS entry or use a separate STATE_DIR');
     }
     // Fields added with role-aware approvals; older version-1 state files load unchanged.
     state.candidates ??= [];
@@ -121,11 +133,8 @@ export class LinearApi {
     return result.data;
   }
   async team() {
-    const { team } = await this.query('query($id:String!){team(id:$id){id name}}', { id: this.cfg.team });
-    if (!team || team.id !== this.cfg.team) fail('team-mismatch', 'Linear returned a different team than TEST_TEAM_ID; check the team UUID');
-    if (!/\btest\b/i.test(team.name)) {
-      fail('team-name', 'The configured team name must contain TEST as a separate word, for example "Rank Guardrail TEST" ("Testing" or "MyTest" do not qualify)');
-    }
+    const { team } = await this.query('query($id:String!){team(id:$id){id}}', { id: this.cfg.team });
+    if (!team || team.id !== this.cfg.team) fail('team-mismatch', 'Linear returned a different team than the PROTECTED_TEAMS entry; check the team UUID');
   }
   async issues() {
     const rows = []; let after = null;
@@ -134,7 +143,7 @@ export class LinearApi {
       rows.push(...issues.nodes);
       after = issues.pageInfo.hasNextPage ? issues.pageInfo.endCursor : null;
       if (rows.length > 10000 || (issues.pageInfo.hasNextPage && !after)) {
-        fail('api-pagination', 'Team issue list exceeds 10,000 issues or returned an unsafe page; use a smaller dedicated TEST team');
+        fail('api-pagination', 'Team issue list exceeds 10,000 issues or returned an unsafe page; protect a smaller team');
       }
     } while (after);
     return rows;
@@ -244,7 +253,7 @@ export class Guardrail {
         await this.api.team();
         const rows = (await this.api.issues()).filter(r => !r.archivedAt && r.labels.nodes.some(l => l.id === this.cfg.label));
         if (!rows.length || rows.length > 100) {
-          fail('label-count', `Publish requires 1-100 non-archived issues with PROTECTED_LABEL_ID in the TEST team; found ${rows.length}`);
+          fail('label-count', `Publish requires 1-100 non-archived issues with the protected label in team ${this.cfg.team}; found ${rows.length}`);
         }
         const sorted = ordered(rows);
         if (rows.some(r => !Number.isFinite(r.sortOrder)) || !inOrder(sorted)) {
@@ -266,11 +275,11 @@ export class Guardrail {
       } else fail('usage', 'Unknown command');
       await this.store.audit(command, { count: s.baseline.length, dropped, restore });
       await this.store.save(s);
-      return { paused: s.paused, protectedCount: s.baseline.length, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
+      return { team: this.cfg.team, paused: s.paused, protectedCount: s.baseline.length, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
     });
   }
   status(s) {
-    return { paused: s.paused, tripped: s.tripped, failures: s.failures, pending: s.pending,
+    return { team: this.cfg.team, label: this.cfg.label, paused: s.paused, tripped: s.tripped, failures: s.failures, pending: s.pending,
       dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals, approvalGraceMs: this.cfg.graceMs,
       protectedCount: s.baseline.length, baseline: s.baseline, publishedAt: s.publishedAt ?? null,
       driftSince: s.driftSince, pendingApprovalEvents: s.candidates.length, ownWriteIntents: s.intents.length,
