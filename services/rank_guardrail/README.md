@@ -1,10 +1,12 @@
 # Rank guardrail
 
-Rank guardrail protects the manual order of a chosen set of issues in one or more Linear teams. In each protected team you label the issues you care about, arrange them in a **Manual order** list, and publish that order as the approved baseline. A small Node.js service then watches each team:
+Rank guardrail protects the manual order of a chosen set of issues in one or more Linear teams. An engineer sets it up once with a list of team and label UUIDs. After that, people work only in Linear: in each protected team they label the issues they care about and arrange them in a **Manual order** list. A small Node.js service adopts that order as the approved baseline on its first check of the team, then watches each team:
+
+- Adding or removing the label adds or removes an issue from the protected set automatically. A newly labeled issue is protected at the position it has when the label is added.
 
 - In **dry run** (the default), it records the repair it would make whenever the protected issues fall out of the approved relative order.
 - With writes enabled, it puts the protected issues back in the approved relative order by updating their rank (`sortOrder`).
-- With optional **role-aware approvals**, a reorder made in Linear by a workspace owner, workspace admin, or owner of the protected team becomes the new approved order instead of being repaired.
+- With **role-aware approvals** (on by default; needs a webhook), a reorder made in Linear by a workspace owner, workspace admin, or owner of the protected team becomes the new approved order instead of being repaired.
 
 The guardrail only ever writes `sortOrder`. It never changes status, cycle, assignee, labels, or any other field, and it does not treat status or cycle changes as violations.
 
@@ -14,28 +16,30 @@ The guardrail only ever writes `sortOrder`. It never changes status, cycle, assi
 
 These are enforced by the current code. Read them before you plan a rollout.
 
-- **One label per team.** You can protect several teams from one installation, each with its own label. A team's baseline is every non-archived issue in that team with its label: 1–100 issues, in a team with at most 10,000 issues including archived ones.
+- **One label per team.** You can protect several teams from one installation, each with its own label. A team's protected set is every non-archived issue in that team with its label, in a team with at most 10,000 issues including archived ones. There is no limit on the number of labeled issues.
 - **Relative order only.** It protects the order of the labeled issues relative to each other, as seen in an ungrouped Manual order list. Unlabeled issues can sit anywhere between them. Boards, grouped views, priority sorting, and sub-issue order are not protected.
 - **Eventual repair, not a lock.** People can still drag issues; the service checks about every five seconds and repairs afterwards.
 - **One local process.** The service runs on one machine, keeps its state on the local filesystem, and listens only on `127.0.0.1`. Receiving webhooks needs a tunnel or reverse proxy in front of it.
 
 ## How it works
 
-You operate the guardrail with CLI commands. Never edit files under `.state/` by hand or change issue statuses to control it.
+People using Linear need no access to the service: they protect issues by labeling them, and allowed roles reorder them by dragging. The CLI commands below are for the engineer who installs and maintains the service. Never edit files under `.state/` by hand or change issue statuses to control it.
 
 Each protected team is independent: it has its own baseline, pause flag, safety breaker, and audit log in `.state/<team-uuid>/`. Pausing, publishing, a repair, or a tripped breaker in one team never affects another.
 
 | Control | Where it lives | What it means |
 | --- | --- | --- |
 | Dry run | `DRY_RUN` in `.env`, read when each process starts | Any value other than exactly `false` means never write ranks. `false` permits rank writes, subject to the other controls. Editing `.env` does not change a server that is already running. |
-| Paused | `.state/<team-uuid>/state.json`, changed with `pause` / `resume` | `paused: true`: no checks or repairs. `paused: false`: the running server checks the approved order. Independent of dry run. |
-| Baseline | `.state/<team-uuid>/state.json`, set with `publish` | The ordered IDs of the protected issues. Publishing accepts the issues that currently have the label, in their current order. It does not reorder anything in Linear. |
+| Paused | `.state/<team-uuid>/state.json`, changed with `pause` / `resume` | `paused: false` (the default): the running server checks the approved order. `paused: true`: no checks or repairs, until `resume`. Independent of dry run. |
+| Baseline | `.state/<team-uuid>/state.json`, set by the server's first check of the team | The ordered IDs of the protected issues. The first check accepts the issues that currently have the label, in their current order. After that, each check (and `resume`) applies label changes: newly labeled issues join at their current position, and issues that lose the label, are archived, or leave the team are dropped. Neither step reorders anything in Linear. |
 | Server | The terminal running `npm start` | Only this long-running process checks and repairs. CLI commands such as `resume` do not start it. |
-| Role approvals | `ROLE_APPROVALS` in `.env`, read when each process starts | Off unless exactly `true`. When on, a provable reorder by an allowed role becomes the new approved order (step 11). When off, every reorder of protected issues is repaired, whoever made it. |
+| Role approvals | `ROLE_APPROVALS` in `.env`, read when each process starts | On unless exactly `false`. When on, a provable reorder by an allowed role becomes the new approved order (step 11); this needs the webhook from step 10. When off, every reorder of protected issues is repaired, whoever made it. |
 
-**Real repairs require all of these:** a running server, a published baseline, `paused: false`, the server started with `DRY_RUN=false`, and `tripped: false` (the safety breaker has not stopped it).
+**Real repairs require all of these:** a running server, `paused: false`, the server started with `DRY_RUN=false`, and `tripped: false` (the safety breaker has not stopped it).
 
-A newly protected team starts paused, without a baseline. Restarting the server keeps the baseline, pause flag, and breaker. Restarting does **not** resume, and turning off dry run does **not** resume either.
+A newly protected team starts unpaused, and the server's first check adopts its labeled issues in their current order as the baseline; no command is needed. Restarting the server keeps the baseline, pause flag, and breaker. If an engineer paused a team, restarting does **not** resume it, and turning off dry run does **not** resume it either.
+
+**Safety breaker.** Three failed checks in a row (for example, Linear unreachable or a revoked key) or a repair fight that exceeds the write budget trips a team's breaker. Checks and repairs stop for 10 minutes and then resume on their own against the last approved order; each trip is audited as `breaker` and each retry as `breaker-retry`. The 10-writes-per-10-minutes budget still applies, so a fight that continues trips again quickly.
 
 ## What you need
 
@@ -89,7 +93,7 @@ PROTECTED_TEAMS=REPLACE_WITH_TEAM_UUID:REPLACE_WITH_LABEL_UUID
 LINEAR_API_KEY=REPLACE_WITH_OAUTH_APP_API_KEY
 WEBHOOK_SECRET=REPLACE_WITH_WEBHOOK_SIGNING_SECRET
 DRY_RUN=true
-ROLE_APPROVALS=false
+ROLE_APPROVALS=true
 APPROVAL_GRACE_MS=10000
 STATE_DIR=.state
 PORT=8787
@@ -99,7 +103,7 @@ PORT=8787
 - `LINEAR_API_KEY` is the OAuth app's API key from step 3. Paste it as is; the service sends it as `Bearer <key>`. (A value that already starts with `Bearer ` is sent unchanged.)
 - `WEBHOOK_SECRET` is required even without a webhook. Until you set one up, use a random value, for example from `openssl rand -hex 32`. When you add the webhook (step 10), replace it with that webhook's signing secret and restart.
 - Leave `DRY_RUN=true` for now. Missing, misspelled, or upper-case values never enable writes; only the exact value `false` does.
-- Leave `ROLE_APPROVALS=false` until step 11. It accepts only `true` or `false`. `APPROVAL_GRACE_MS` (0–60000, default 10000) only matters when approvals are on.
+- `ROLE_APPROVALS` accepts only `true` or `false` and is on unless exactly `false`. Until the webhook from step 10 works, every reorder is repaired after the grace period. On Linear's Free plan, set it to `false` (see step 11). `APPROVAL_GRACE_MS` (0–60000, default 10000) only matters when approvals are on.
 - This guide assumes `STATE_DIR=.state` and `PORT=8787` (allowed range 1024–65535). If you change either, adapt the paths and port below. A custom state directory outside `.state/` is not covered by `.gitignore`.
 
 Keep `.env` private: it holds the app's API key. `.env` and `.state/` are gitignored.
@@ -140,29 +144,11 @@ node --env-file=.env src/cli.js status
 
 It prints the `team` and `label`, `paused`, `tripped`, `dryRun`, `roleApprovals`, `approvalGraceMs`, the saved `baseline`, and counts of pending approval events, own-write intents, and recent repair writes. `dryRun` and `roleApprovals` describe the `.env` this CLI process read; the running server's modes are on its startup line. With several protected teams, `status` and `pause` cover every team and return `{ "teams": [...] }`; see [Protect more teams](#protect-more-teams).
 
-**Operator trust.** Anyone who can run these commands with this `.env` and state directory is a trusted operator: `pause`, `publish`, and `resume --restore` are not role-checked. Role checks apply only to reorders made in Linear and reported by webhook. Protect the checkout, `.env` and `.state/` with filesystem permissions.
+**Operator trust.** Anyone who can run these commands with this `.env` and state directory is a trusted operator: `pause`, `publish`, and `resume --restore` are not role-checked. None of them are needed for everyday use. Role checks apply only to reorders made in Linear and reported by webhook. Protect the checkout, `.env` and `.state/` with filesystem permissions.
 
-## 6. Publish the first baseline and start in dry run
+## 6. Start the server in dry run
 
-With the server stopped, in **Terminal 2** run each command separately and check it succeeds:
-
-```sh
-node --env-file=.env src/cli.js pause
-node --env-file=.env src/cli.js publish
-node --env-file=.env src/cli.js status
-node --env-file=.env src/cli.js resume
-```
-
-What to expect:
-
-- `pause` returns JSON containing `"paused": true`.
-- `publish` reads Linear and saves the labeled issues in their current order. With A, B, C labeled, the output includes `"paused": true`, `"protectedCount": 3`, `"dropped": []`, and `"dryRun": true`. It **stays paused**.
-- `status` shows a `baseline` of three IDs and ranks in A, B, C order. Confirm they are the intended issues.
-- `resume` returns `"paused": false`. It neither starts the server nor repairs anything by itself.
-
-If a command fails, stop and use the troubleshooting section. Do not continue on the assumption that it worked.
-
-Then in **Terminal 1**:
+Arrange the labeled issues in the order you want before starting: the first check adopts the current order as the baseline. In **Terminal 1**:
 
 ```sh
 npm start
@@ -171,10 +157,19 @@ npm start
 Wait for:
 
 ```text
-Listening on localhost:8787; teams=1; dryRun=true; roleApprovals=false; approvalGraceMs=10000
+Listening on localhost:8787; teams=1; dryRun=true; roleApprovals=true; approvalGraceMs=10000
 ```
 
 Leave it running. The server checks immediately and then about every five seconds. **No webhook is needed for detection and repair**: polling reads the current order directly from Linear.
+
+In **Terminal 2**, confirm the first check adopted the baseline:
+
+```sh
+node --env-file=.env src/cli.js status
+tail -n 5 .state/*/audit.jsonl
+```
+
+`status` shows `"paused": false` and a `baseline` of three IDs and ranks in A, B, C order, and the audit log has a `"membership"` entry listing them in `added`. Confirm they are the intended issues. If the baseline stays empty, use the troubleshooting section.
 
 ## 7. Check detection in dry run
 
@@ -187,7 +182,7 @@ Leave it running. The server checks immediately and then about every five second
    tail -n 10 .state/*/audit.jsonl
    ```
 
-Expected: `paused` and `tripped` are `false`, the baseline is still A, B, C, and the audit log contains `"event":"would-repair"`. **The order in Linear stays C, A, B.** Repeated `would-repair` entries are normal until you restore the order.
+Expected: `paused` and `tripped` are `false`, the baseline is still A, B, C, and the audit log contains `"event":"would-repair"` (after an `approval-wait` while no webhook is set up). **The order in Linear stays C, A, B.** Repeated `would-repair` entries are normal until you restore the order.
 
 `status.baseline` is the saved approved order, not a fresh read of Linear.
 
@@ -235,13 +230,15 @@ To turn repairs off again: `pause`, stop the server with Ctrl+C, set `DRY_RUN=tr
 
 ## 9. Change the approved order
 
-Keep the server running. In **Terminal 2**:
+**In Linear.** Once the webhook (step 10) works, a workspace owner, workspace admin, or owner of the protected team changes the approved order by dragging protected issues in the Manual order list. Other people's drags are repaired. See step 11.
+
+**From the CLI.** An engineer can also accept any current order. Keep the server running. In **Terminal 2**:
 
 ```sh
 node --env-file=.env src/cli.js pause
 ```
 
-**Wait for `"paused": true` before dragging anything.** Arrange the new order in Linear (for example C, B, A), add or remove the label on any issues whose protection should change, then:
+**Wait for `"paused": true` before dragging anything.** Arrange the new order in Linear (for example C, B, A), then:
 
 ```sh
 node --env-file=.env src/cli.js publish
@@ -249,15 +246,17 @@ node --env-file=.env src/cli.js status
 node --env-file=.env src/cli.js resume
 ```
 
-The baseline is now the new order, and it stays that way after resuming. `publish` accepts the current order rather than restoring an older one. It also replaces the protected set with the currently labeled issues and lists removed IDs in `dropped`; review that list before resuming. Publishing also resets the safety breaker and write budget, so only publish once the order and membership are what you want.
+The baseline is now the new order, and it stays that way after resuming. `publish` accepts the current order rather than restoring an older one. It also replaces the protected set with the currently labeled issues and lists removed IDs in `dropped`. Publishing also resets the safety breaker and write budget, so only publish once the order and membership are what you want.
 
 `pause` waits for any running check to finish. A failed or timed-out `pause` has **not** paused the service.
 
+**Adding or removing protected issues needs none of this.** Add or remove the label in Linear while the service is running. Within one check (about 5 seconds), a newly labeled issue is protected where it currently sits, and an unlabeled, archived, or moved issue stops being protected. Each change is logged as a `"membership"` audit entry with `added` and `dropped` IDs, and `status` shows the updated baseline. Labels changed while paused are applied at `resume`, which reports them in `added` and `dropped`.
+
 **Advanced:** `resume --restore` skips the changed-order check so that the server restores the *old* baseline on its next check (if writes are enabled). Do not use it to accept an intentional reorder or as a generic fix for failed commands.
 
-## 10. Optional: add a webhook
+## 10. Add a webhook
 
-Polling is enough for detection and repair. A webhook is required only for role-aware approvals (step 11), because polling cannot tell who moved an issue.
+Polling is enough for detection and repair. The webhook is what lets allowed people reorder protected issues in Linear (step 11), because polling cannot tell who moved an issue. Without it, every reorder is repaired.
 
 Linear only delivers webhooks to a publicly reachable HTTPS URL, and expects a `200` response within five seconds. The service listens on `127.0.0.1:8787` only, so put a tunnel (for example `ngrok http 8787`) or a TLS reverse proxy on the same machine in front of it, forwarding `POST /webhook`.
 
@@ -275,13 +274,13 @@ curl -i -X POST http://127.0.0.1:8787/webhook \
 
 There is no web page or health endpoint; other routes return 404. If your tunnel's hostname changes, update the webhook URL. This guide has not validated delivery through an OAuth application's own webhook settings.
 
-## 11. Optional: role-aware approvals
+## 11. Role-aware approvals
 
-With `ROLE_APPROVALS=true`, a reorder of protected issues is **accepted** (it becomes the new baseline and is not repaired) only when the guardrail can prove who made it. Everyone else's reorders are repaired as before. This needs the working webhook from step 10; without it, every move is repaired after the grace period.
+With role approvals on (the default), a reorder of protected issues is **accepted** (it becomes the new baseline and is not repaired) only when the guardrail can prove who made it. Everyone else's reorders are repaired as before. This needs the working webhook from step 10; without it, every move is repaired after the grace period.
 
 **Who may reorder.** An active, non-app user in the same workspace as the guardrail's OAuth app who is a workspace **owner**, workspace **admin**, or an **owner of exactly the protected team** through an active membership. Owners of other teams (including parent teams), regular members, inactive or suspended users, app users, users from other workspaces, unknown users, and non-user actors (`integration`, `oauthClient`, `externalUser`, or none) are denied. The token's own user, the OAuth app, is always denied, so the guardrail's repairs can never approve themselves. Because the guardrail authenticates as an app rather than as a person, people's own drags in Linear are attributed to them and can be approved.
 
-> **Free plan caveat:** on the Free plan Linear reports every member as an admin, so every active member would be allowed to reorder. Use approvals only on a paid plan, or leave them off.
+> **Free plan caveat:** on the Free plan Linear reports every member as an admin, so every active member would be allowed to reorder. Use approvals only on a paid plan, or set `ROLE_APPROVALS=false`.
 
 **What counts as proof.** All of these must hold, checked on a fresh read while the state is locked:
 
@@ -294,7 +293,7 @@ An approval changes only the order and anchors of the existing baseline in local
 
 **Grace period.** Polling can see a move before its webhook arrives. While some drift is unexplained, the server waits up to `APPROVAL_GRACE_MS` from first detection (audited as `approval-wait`) before repairing. A webhook that arrives after that is too late: the move has already been repaired and the event cannot approve anything.
 
-**Turn it on.** `pause`, set `ROLE_APPROVALS=true` in `.env`, restart the server, confirm the startup line shows `roleApprovals=true`, then `resume`. Check people's roles first (read-only; prints `allowed` and a `reason` such as `workspace-admin`, `team-owner`, or `not-owner-admin-or-team-owner`):
+**Turn it off or on.** `pause`, set `ROLE_APPROVALS=false` (or `true`) in `.env`, restart the server, check the `roleApprovals=` value on the startup line, then `resume`. To check people's roles (read-only; prints `allowed` and a `reason` such as `workspace-admin`, `team-owner`, or `not-owner-admin-or-team-owner`):
 
 ```sh
 node --env-file=.env src/cli.js check-actor ADMIN_USER_UUID
@@ -314,7 +313,7 @@ If an allowed move is repaired anyway, check that the webhook arrived within the
 
 ## 12. Run it for longer
 
-- **Key changes.** The key is read once at startup. To replace it: `pause`, stop the server, update `LINEAR_API_KEY` in `.env`, `npm start`, `resume`. If the key is revoked while the server is running, API calls return 401, and after three consecutive failed checks the safety breaker trips. To recover, `pause`, restart with a working key, review the order, `publish`, and `resume`.
+- **Key changes.** The key is read once at startup. To replace it: `pause`, stop the server, update `LINEAR_API_KEY` in `.env`, `npm start`, `resume`. If the key is revoked while the server is running, API calls return 401, and after three consecutive failed checks the safety breaker trips. It retries every 10 minutes, and recovers on its own once the server has a working key.
 - **Hosting.** Keep exactly one server process per state directory, on one machine with a local disk (no NFS or multiple replicas), started from this directory with the same `.env` and `.state/`. A process manager (systemd, launchd, or a container with a persistent volume for `STATE_DIR`) can restart it after a crash; saved state is picked up and polling recovers missed events.
 - **Revoking access.** To stop the guardrail from changing Linear, `pause` it. To cut off its API access entirely, revoke the app's API key or delete the app.
 - **Records.** Each `.state/<team-uuid>/audit.jsonl` contains issue IDs, ranks, and user UUIDs, not credentials. Retention and backups are up to you.
@@ -325,14 +324,7 @@ Once one team works as expected, add more `<team-uuid>:<label-uuid>` pairs to `P
 
 1. Prepare each new team as in step 2: a label, the labeled issues, and a Manual order list. Give the app access if the team is private (step 3).
 2. `pause` (this pauses every already protected team), stop the server with Ctrl+C, add the new pair to `PROTECTED_TEAMS`, and restart with `npm start`. The startup line shows the new `teams=` count.
-3. Publish and resume the new team by its UUID. New teams start paused without a baseline, so nothing happens in them until you do:
-
-   ```sh
-   node --env-file=.env src/cli.js status --team NEW_TEAM_UUID
-   node --env-file=.env src/cli.js publish --team NEW_TEAM_UUID
-   node --env-file=.env src/cli.js resume --team NEW_TEAM_UUID
-   ```
-
+3. Nothing else is needed for the new team: the server's first check adopts its labeled issues in their current order. Confirm with `status --team NEW_TEAM_UUID`.
 4. Resume each existing team with `resume --team TEAM_UUID` once its order still matches its baseline.
 5. If you use a webhook, add the new team to it (step 10).
 
@@ -344,7 +336,7 @@ With more than one protected team:
 - Role approvals use each team's own owners: an owner of team A can approve reorders in team A, not in team B. Workspace owners and admins can approve in every team.
 - The server checks the teams one after another about every five seconds, so each team adds Linear API requests to every check.
 
-To stop protecting a team, `pause --team TEAM_UUID`, stop the server, remove its pair from `PROTECTED_TEAMS`, and restart. Its directory under `.state/` is kept; if you add the team back with the same label, it resumes from that state, still paused.
+To stop protecting a team, `pause --team TEAM_UUID`, stop the server, remove its pair from `PROTECTED_TEAMS`, and restart. Its directory under `.state/` is kept; if you add the team back with the same label, it continues from that state (still paused if it was paused).
 
 ## Command reference
 
@@ -354,8 +346,8 @@ Run from `services/rank_guardrail` as `node --env-file=.env src/cli.js <command>
 | --- | --- | --- |
 | `status` | No | Prints mode, pause and breaker state, and the saved baseline. |
 | `pause` | No | Stops checks and repairs; waits for a running check to finish. |
-| `publish` | Yes | While paused, saves the currently labeled issues and their order as the baseline, and resets the breaker. |
-| `resume` | Yes | Restarts checks if the current order matches the baseline. |
+| `publish` | Yes | While paused, saves the currently labeled issues and their order as the baseline, and resets the breaker. Not needed for a new team or for label changes. |
+| `resume` | Yes | Applies label changes made while paused, then restarts checks if the current order matches the baseline. |
 | `resume --restore` | Yes | Restarts checks even if the order changed, so the old baseline is restored. |
 | `check-actor <user-uuid>` | Yes | Read-only: shows whether that user could approve a reorder in each protected team. |
 | `serve` | Yes | Runs the server. `npm start` runs `serve` with `.env`. |
@@ -381,12 +373,10 @@ The audit file may not exist until the first successful state-changing command. 
 | `api-network` / `api-response` | No connection or timeout / unreadable response. Retry. |
 | `api-graphql` | Linear rejected the request: check UUIDs, the app's team access, and scopes. Details are intentionally hidden. |
 | `pause-required` | Run `pause`, wait for `"paused": true`, then `publish`. |
-| `label-count` | Publish needs 1–100 non-archived issues with the team's label in that team; the message shows the team and how many were found. |
 | `rank-collision` | Protected issues share a rank: while paused, drag them into a distinct order, then publish. |
 | `order-changed` | `resume` found a different order. Restore the approved order while paused, or `publish` the new order on purpose. |
-| `no-baseline` | Run `pause`, then `publish` first. |
-| `breaker-tripped` | See the `tripped: true` row below. |
-| `state-scope` | The team's saved state was published with a different label. Restore the previous `PROTECTED_TEAMS` entry, or use a separate `STATE_DIR`. |
+| `breaker-tripped` | `resume` while the breaker is tripped. Wait for its automatic retry, or see the `tripped: true` row below. |
+| `state-scope` | The team's saved state was created with a different label. Restore the previous `PROTECTED_TEAMS` entry, or use a separate `STATE_DIR`. |
 | `state-lock` / `state-unreadable` | See the lock row below / preserve `state.json` and stop all processes. |
 | `usage` | Unknown command or argument, `--team` not listed in `PROTECTED_TEAMS`, or `publish`/`resume` without `--team` while several teams are protected. |
 
@@ -394,12 +384,13 @@ The audit file may not exist until the first successful state-changing command. 
 | --- | --- |
 | No repair, `would-repair` appears | The server is in dry run. Use step 8 if you want real writes. |
 | No checks, `paused: true` | Check the approved and current order, then run `resume`. Editing `.env` alone does not resume. |
-| `paused: false`, but nothing happens | Is the server still running? Is there a baseline? Is `tripped` false? Check the Manual order ungrouped view, the startup line, and the audit log. |
+| `paused: false`, but nothing happens | Is the server still running? Is `tripped` false? Check the Manual order ungrouped view, the startup line, and the audit log. |
 | `status` says `dryRun: false` but the server logs plans | The CLI read the edited file but the old server did not. Pause, stop and wait for exit, restart, check the startup line, then resume. Check for exported variables overriding `.env`. |
-| Initial `publish` fails | Read the error code. Check `PROTECTED_TEAMS`, the team and label UUIDs, the API key and team access, 1–100 labeled non-archived issues, and distinct ranks. |
+| A new team's baseline stays empty | Check the server is running and look for `reconcile-error` codes in that team's audit log. Check `PROTECTED_TEAMS`, the team and label UUIDs, the API key and team access, and that the issues have that label. |
 | Allowed user's drag is repaired | Approvals are off (`roleApprovals=false` on the startup line), the webhook is missing or late, `check-actor` denies the user, or the change was mixed or stale. See step 11 and the `approval-rejected` reason. |
-| `resume` fails | It needs a baseline, an untripped breaker, and the current order matching the baseline. While paused, restore the approved order or intentionally `publish` a new one. Do not reach for `--restore` by default. |
-| `tripped: true` | Stop and inspect the audit log. The repair budget is 3 writes per check and 10 writes per 10 minutes, and 3 consecutive failed checks (for example, a revoked API key) also trip it. Once you understand the cause, pause, fix it, arrange the desired order, publish, and resume. Waiting or restarting alone does not clear it. |
+| A labeled issue is missing from `status.baseline` | Labels apply on the next check of a running, unpaused, untripped team, or at `resume`. Check that the issue has the team's label (not another label with the same name), is in that team, and is not archived. Look for `"membership"` in the audit log. |
+| `resume` fails | It needs an untripped breaker and the current order matching the baseline. While paused, restore the approved order or intentionally `publish` a new one. Do not reach for `--restore` by default. |
+| `tripped: true` | Inspect the audit log. The repair budget is 3 writes per check and 10 writes per 10 minutes, and 3 consecutive failed checks (for example, a revoked API key) also trip it. It retries on its own 10 minutes after `trippedAt` against the last approved order. If it keeps tripping, fix the cause (for example a key, team access, or another tool reordering issues). To clear it immediately, pause, arrange the desired order, publish, and resume. |
 | Webhook returns 401 | Check the webhook's signing secret (it is not the OAuth app's API key or client secret), restart after changing it, make sure the machine's clock is correct, and test with a fresh delivery. Polling keeps working meanwhile. |
 | Wrong team, label, or baseline in `status` | Check the working directory, `STATE_DIR`, and `PROTECTED_TEAMS`. Never run two state directories against the same protected issues. |
 | Lock error, or a command hangs then fails | A check may hold the lock; wait and retry (the wait is about 30 seconds). After an unclean kill, stop **every** process using that state directory before removing a confirmed stale `.state/lock` directory. Never remove an active lock or delete `.state` to fix a problem. |
@@ -408,9 +399,9 @@ For corrupt state, preserve `.state/` for review and stop all processes before d
 
 ## Technical details and limitations
 
-- **Selection.** A team's baseline is every non-archived issue in that team with its label, including completed issues, with no project, status, cycle, or assignee filtering. Removing the label from a baselined issue does not unprotect it, and newly labeled issues are not added, until the next `publish`.
-- **Repair.** Repairs re-space the protected issues from the current lowest rank, at least 1,024 rank units apart. This can move neighbors and is not a minimum-movement algorithm. Each write is preceded by a fresh read, and an unexpected rank (a concurrent edit) triggers a new plan. Ties trigger repair; unrepresentable ranks fail closed. Large reorders can exceed the write budget and trip the breaker for review.
-- **Concurrency.** There is no atomic compare-and-set in Linear for rank or team, so an edit or team move between a fresh read and an update can still race. Pause before moving protected issues to another team. A protected issue that is missing, archived, or moved out of the team counts as a failed check. Publish during a quiet period while paused; paginated reads are not an atomic snapshot.
+- **Selection.** A team's baseline is every non-archived issue in that team with its label, including completed issues, with no project, status, cycle, or assignee filtering. A new team's first check adopts them all in their current rank order (ties broken by issue ID, then repaired). Label changes are applied on the next check: new members are placed by their current rank among the kept issues (ties broken by issue ID), and dropped issues are no longer repaired. A label change in the middle of a repair ends that check, and the next check plans again from a fresh read.
+- **Repair.** Repairs re-space the protected issues from the current lowest rank, at least 1,024 rank units apart. This can move neighbors and is not a minimum-movement algorithm. Each write is preceded by a fresh read, and an unexpected rank (a concurrent edit) triggers a new plan. Ties trigger repair; unrepresentable ranks fail closed. Large reorders can exceed the write budget and trip the breaker, which retries after 10 minutes.
+- **Concurrency.** There is no atomic compare-and-set in Linear for rank or team, so an edit or team move between a fresh read and an update can still race. A protected issue that is archived or moved out of the team leaves the protected set; one without a numeric rank counts as a failed check. Publish during a quiet period while paused; paginated reads are not an atomic snapshot.
 - **Timing.** The server checks about every five seconds with ten-second API timeouts. Repairs are eventual, not guaranteed within a fixed delay.
 - **Role approvals** are conservative: missed, late, stale, mixed, or anchor-mismatched events are repaired rather than approved, and an allowed user's move that builds on someone else's unapproved drift is repaired too. A change that re-ranks several issues is approved only if every change arrives as an allowed user's webhook. There is no CLI command to approve a single move; use pause and publish. Role lookups read `user(id)` fields (`active`, `app`, `admin`, `owner`, `organization`, and `teamMemberships`); only the exact protected team counts, not parent teams, and more than 1,000 memberships fail closed for non-admins. Lookups are not cached between checks, so revoked roles apply immediately. Approval evidence is kept per team for at most 10 minutes or 200 events, and is discarded on pause/resume and publish.
 - **State.** Each team has its own directory and local lock under `STATE_DIR`, which serializes that team's CLI commands and checks; use one machine and a local filesystem, not NFS. `state.json` is replaced atomically, which survives process restarts but is not a power-loss or distributed guarantee.

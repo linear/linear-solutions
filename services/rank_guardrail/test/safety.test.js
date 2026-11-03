@@ -13,7 +13,7 @@ async function setup(t) {
   let writes = 0;
   const api = { team: async () => {}, issues: async () => structuredClone(rows), update: async (id, rank) => { writes++; rows.find(r => r.id === id).sortOrder = rank; } };
   const store = new Store(cfg), guard = new Guardrail(cfg, api, store);
-  await guard.control('publish');
+  await guard.reconcile(); await guard.control('pause');
   return { cfg, rows, api, store, guard, writes: () => writes };
 }
 
@@ -34,6 +34,14 @@ test('sustained drift budget persists across restart and blocks next mutation', 
   const restarted = new Guardrail(f.cfg, f.api, new Store(f.cfg));
   await restarted.reconcile();
   assert.equal(f.writes(), 0); assert.equal((await f.store.load()).tripped, true);
+});
+
+test('labels added or removed while paused do not block resume', async t => {
+  const f = await setup(t); f.rows[0].labels.nodes = [];
+  f.rows.push({ id: 'c', sortOrder: 512, labels: { nodes: [{ id: 'l' }] } });
+  const result = await f.guard.control('resume');
+  assert.deepEqual([result.added, result.dropped, result.paused], [['c'], ['a'], false]);
+  assert.deepEqual((await f.store.load()).baseline.map(x => x.id), ['c', 'b']);
 });
 
 test('publish explicitly reports label-removed items being dropped', async t => {

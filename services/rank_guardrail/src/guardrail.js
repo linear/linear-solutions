@@ -9,6 +9,7 @@ const CANDIDATE_TTL_MS = 600000;
 const INTENT_TTL_MS = 600000;
 const MAX_CANDIDATES = 200;
 const MAX_CHAIN = 20;
+const BREAKER_COOLDOWN_MS = 600000;
 
 // PROTECTED_TEAMS lists one team-UUID:label-UUID pair per protected team, comma-separated.
 export function config(env = process.env) {
@@ -36,7 +37,7 @@ export function config(env = process.env) {
   }
   const dir = resolve(env.STATE_DIR || '.state');
   return { teams, key: authorization(env.LINEAR_API_KEY),
-    secret: env.WEBHOOK_SECRET, dry: env.DRY_RUN !== 'false', approvals: env.ROLE_APPROVALS === 'true', graceMs, dir };
+    secret: env.WEBHOOK_SECRET, dry: env.DRY_RUN !== 'false', approvals: env.ROLE_APPROVALS !== 'false', graceMs, dir };
 }
 
 // A pasted OAuth app key is sent as `Bearer <key>`. Personal API keys (lin_api_) and values
@@ -86,8 +87,10 @@ export class Store {
     catch (e) {
       if (e.code !== 'ENOENT') fail('state-unreadable', 'state.json could not be read or parsed; stop all processes and preserve it for review');
     }
-    if (!state) state = { version: 1, team: this.cfg.team, label: this.cfg.label, paused: true,
-      baseline: [], seen: [], pending: false, failures: 0, tripped: false };
+    // A new team starts active with an empty baseline: the first check adopts the labeled issues
+    // in their current order, so no publish is needed.
+    if (!state) state = { version: 1, team: this.cfg.team, label: this.cfg.label, paused: false,
+      baseline: [], seen: [], pending: true, failures: 0, tripped: false };
     if (state.version !== 1 || state.team !== this.cfg.team || state.label !== this.cfg.label) {
       fail('state-scope', 'State scope mismatch: this team\'s state belongs to a different team or label; restore the PROTECTED_TEAMS entry or use a separate STATE_DIR');
     }
@@ -95,6 +98,9 @@ export class Store {
     state.candidates ??= [];
     state.intents ??= [];
     state.driftSince ??= null;
+    state.trippedAt ??= null;
+    // Older versions created teams paused until a first publish; such a team now starts on its own.
+    if (state.paused && !state.publishedAt && !state.baseline.length && !state.pausedAt) state.paused = false;
     return state;
   }
   async save(state) {
@@ -187,9 +193,26 @@ export function protectedRows(state, rows) {
   const current = new Map(rows.map(r => [r.id, r]));
   const selected = state.baseline.map(b => current.get(b.id));
   if (selected.some(r => !r || r.archivedAt || !Number.isFinite(r.sortOrder))) {
-    fail('baseline-missing', 'Baseline item missing, archived, moved, or invalid; explicit review required');
+    fail('baseline-missing', 'A protected issue has no numeric rank; explicit review required');
   }
   return selected;
+}
+// Membership follows the label: newly labeled issues join at their current position, and issues
+// that lost the label, were archived, or left the team are dropped. Existing members keep their
+// approved relative order. Updates state.baseline and returns the protected rows in that order.
+export function syncMembers(state, rows, label) {
+  const labeled = rows.filter(r => !r.archivedAt && r.labels.nodes.some(l => l.id === label));
+  const ids = new Set(labeled.map(r => r.id)), known = new Set(state.baseline.map(b => b.id));
+  const dropped = state.baseline.filter(b => !ids.has(b.id)).map(b => b.id);
+  const added = ordered(labeled.filter(r => !known.has(r.id)));
+  const merged = []; let i = 0;
+  for (const b of state.baseline.filter(b => ids.has(b.id))) {
+    while (i < added.length && (added[i].sortOrder - b.sortOrder || added[i].id.localeCompare(b.id)) < 0) merged.push(added[i++]);
+    merged.push(b);
+  }
+  merged.push(...added.slice(i));
+  state.baseline = merged.map(({ id, sortOrder }) => ({ id, sortOrder }));
+  return { rows: protectedRows(state, rows), added: added.map(r => r.id), dropped };
 }
 export function inOrder(rows) {
   return rows.every((r, i) => !i || rows[i - 1].sortOrder < r.sortOrder);
@@ -252,40 +275,39 @@ export class Guardrail {
     return this.store.locked(async () => {
       const s = await this.store.load();
       if (command === 'status') return this.status(s);
-      let dropped = [];
-      if (command === 'pause') s.paused = true;
+      let dropped = [], added = [];
+      if (command === 'pause') { s.paused = true; s.pausedAt = new Date().toISOString(); }
       else if (command === 'publish') {
         if (!s.paused) fail('pause-required', 'Publish requires pause: run pause, wait for "paused": true, then publish');
         await this.api.team();
         const rows = (await this.api.issues()).filter(r => !r.archivedAt && r.labels.nodes.some(l => l.id === this.cfg.label));
-        if (!rows.length || rows.length > 100) {
-          fail('label-count', `Publish requires 1-100 non-archived issues with the protected label in team ${this.cfg.team}; found ${rows.length}`);
-        }
         const sorted = ordered(rows);
         if (rows.some(r => !Number.isFinite(r.sortOrder)) || !inOrder(sorted)) {
           fail('rank-collision', 'Two or more protected issues share a rank or have no numeric rank; while paused, drag them into a distinct manual order and publish again');
         }
         dropped = s.baseline.filter(b => !sorted.some(r => r.id === b.id)).map(b => b.id);
         s.baseline = sorted.map(({ id, sortOrder }) => ({ id, sortOrder }));
-        s.publishedAt = new Date().toISOString(); s.tripped = false; s.failures = 0; s.repairHistory = [];
+        s.publishedAt = new Date().toISOString(); s.tripped = false; s.trippedAt = null; s.failures = 0; s.repairHistory = [];
         s.candidates = []; s.driftSince = null;
       } else if (command === 'resume') {
-        if (!s.baseline.length) fail('no-baseline', 'Publish a baseline first (pause, then publish)');
-        if (s.tripped) fail('breaker-tripped', 'Safety breaker is tripped: review the audit, then publish while paused to reset it');
+        if (s.tripped) fail('breaker-tripped', 'Safety breaker is tripped: it retries on its own 10 minutes after tripping, or publish while paused to reset it now');
         await this.api.team();
-        if (!restore && !inOrder(protectedRows(s, await this.api.issues()))) {
+        // Labels added or removed while paused are applied; only the order of kept issues is checked.
+        const sync = syncMembers(s, await this.api.issues(), this.cfg.label);
+        ({ added, dropped } = sync);
+        if (!restore && !inOrder(sync.rows)) {
           fail('order-changed', 'Order changed while paused: publish intentionally, or resume --restore to restore baseline');
         }
         // Webhook evidence from before the pause is not reused for approvals.
         s.paused = false; s.pending = true; s.candidates = []; s.driftSince = null;
       } else fail('usage', 'Unknown command');
-      await this.store.audit(command, { count: s.baseline.length, dropped, restore });
+      await this.store.audit(command, { count: s.baseline.length, added, dropped, restore });
       await this.store.save(s);
-      return { team: this.cfg.team, paused: s.paused, protectedCount: s.baseline.length, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
+      return { team: this.cfg.team, paused: s.paused, protectedCount: s.baseline.length, added, dropped, dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals };
     });
   }
   status(s) {
-    return { team: this.cfg.team, label: this.cfg.label, paused: s.paused, tripped: s.tripped, failures: s.failures, pending: s.pending,
+    return { team: this.cfg.team, label: this.cfg.label, paused: s.paused, tripped: s.tripped, trippedAt: s.trippedAt, failures: s.failures, pending: s.pending,
       dryRun: this.cfg.dry, roleApprovals: this.cfg.approvals, approvalGraceMs: this.cfg.graceMs,
       protectedCount: s.baseline.length, baseline: s.baseline, publishedAt: s.publishedAt ?? null,
       driftSince: s.driftSince, pendingApprovalEvents: s.candidates.length, ownWriteIntents: s.intents.length,
@@ -382,13 +404,22 @@ export class Guardrail {
   async reconcile() {
     return this.store.locked(async () => {
       const s = await this.store.load();
-      if (s.paused || s.tripped || !s.baseline.length) return;
+      if (s.paused) return;
+      if (s.tripped) {
+        // The breaker is a cooldown, not a latch: retry against the last approved order. The repair
+        // write budget is kept, so a persistent fight trips again after at most ten more writes.
+        if (this.clock() - (s.trippedAt ?? 0) < BREAKER_COOLDOWN_MS) return;
+        s.tripped = false; s.trippedAt = null; s.failures = 0; s.pending = true;
+        await this.store.audit('breaker-retry');
+      }
       try {
         await this.api.team();
         prune(s, this.clock());
         let writes = 0, repairs = null, observed = null;
         for (let pass = 0; pass < 3; pass++) {
-          const rows = protectedRows(s, await this.api.issues());
+          const { rows, changed } = await this.members(s);
+          // A label change after one of this sweep's writes invalidates the plan: re-plan next sweep.
+          if (changed && writes) { s.pending = true; await this.store.save(s); return; }
           if (inOrder(rows)) {
             if (writes || s.pending) await this.store.audit('in-order', { writes });
             this.settle(s, rows); await this.store.save(s); return;
@@ -412,7 +443,7 @@ export class Guardrail {
           if (!repair || writes >= 3) break;
           s.repairHistory = (s.repairHistory || []).filter(at => at > Date.now() - 600000);
           if (s.repairHistory.length >= 10) {
-            s.tripped = true;
+            this.trip(s);
             await this.store.audit('breaker', { reason: 'ten-write-ten-minute-budget' });
             await this.store.save(s); return;
           }
@@ -425,19 +456,26 @@ export class Guardrail {
           await this.api.update(repair.id, repair.sortOrder); writes++;
         }
         // A maximum of three mutations per sweep; large drift requires explicit review, not a loop.
-        const rows = protectedRows(s, await this.api.issues());
+        const { rows } = await this.members(s);
         if (!inOrder(rows)) {
-          s.tripped = true; await this.store.audit('breaker', { reason: 'repair-budget', writes });
+          this.trip(s); await this.store.audit('breaker', { reason: 'repair-budget', writes });
         } else this.settle(s, rows);
       } catch (e) {
         s.failures++;
-        if (s.failures >= 3) s.tripped = true;
+        if (s.failures >= 3) this.trip(s);
         const code = e instanceof GuardrailError ? e.code : 'unexpected-error';
         await this.store.audit('reconcile-error', { code, failures: s.failures, tripped: s.tripped });
       }
       await this.store.save(s);
     });
   }
+  // A fresh team read with label changes applied to the protected set.
+  async members(s) {
+    const { rows, added, dropped } = syncMembers(s, await this.api.issues(), this.cfg.label);
+    if (added.length || dropped.length) await this.store.audit('membership', { added, dropped });
+    return { rows, changed: added.length + dropped.length > 0 };
+  }
+  trip(s) { s.tripped = true; s.trippedAt = this.clock(); }
   // Fresh ranks in the approved relative order become the trusted anchors for later approvals.
   settle(s, rows) {
     s.baseline = rows.map(({ id, sortOrder }) => ({ id, sortOrder }));

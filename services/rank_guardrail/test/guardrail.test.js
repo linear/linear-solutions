@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
@@ -17,7 +17,7 @@ async function fixture(t, dry = false) {
   const api = { team: async () => {}, issues: async () => structuredClone(rows),
     update: async (id, sortOrder) => { calls.push({ id, sortOrder }); rows.find(r => r.id === id).sortOrder = sortOrder; } };
   const store = new Store(cfg), guard = new Guardrail(cfg, api, store);
-  await guard.control('publish'); await guard.control('resume');
+  await guard.reconcile();
   return { cfg, store, guard, api, calls, rows, setRows: next => { rows = next; } };
 }
 
@@ -69,11 +69,27 @@ test('dry run plans without mutation', async t => {
   assert.match(await readFile(join(f.cfg.dir, 'audit.jsonl'), 'utf8'), /would-repair/);
 });
 
-test('label removal remains protected, new labels are not silently enrolled', async t => {
+test('label changes update membership without a publish; new issues join where they are', async t => {
   const f = await fixture(t); f.rows[0].labels.nodes = []; f.rows[0].sortOrder = 5000;
-  f.rows.push({ id: 'new', sortOrder: -1, labels: { nodes: [{ id: 'label' }] } });
-  await f.guard.reconcile(); assert.ok(inOrder(f.rows.slice(0, 3)));
-  assert.equal(f.rows[3].sortOrder, -1); assert.equal((await f.store.load()).baseline.length, 3);
+  f.rows.push({ id: 'new', sortOrder: 1500, labels: { nodes: [{ id: 'label' }] } });
+  await f.guard.reconcile();
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual((await f.store.load()).baseline.map(x => x.id), ['b', 'new', 'c']);
+  assert.match(await readFile(join(f.cfg.dir, 'audit.jsonl'), 'utf8'), /"membership","added":\["new"\],"dropped":\["a"\]/);
+  // The new member is protected like the others.
+  f.rows[3].sortOrder = 9000; await f.guard.reconcile();
+  assert.deepEqual(f.rows.slice(1).toSorted((x, y) => x.sortOrder - y.sortOrder).map(r => r.id), ['b', 'new', 'c']);
+});
+
+test('relabelling every issue, and a large labeled set has no cap', async t => {
+  const f = await fixture(t);
+  for (const r of f.rows) r.labels.nodes = [];
+  await f.guard.reconcile(); assert.equal((await f.store.load()).baseline.length, 0);
+  f.rows[2].labels.nodes = [{ id: 'label' }]; await f.guard.reconcile();
+  assert.deepEqual((await f.store.load()).baseline.map(x => x.id), ['c']);
+  f.setRows(Array.from({ length: 500 }, (_, i) => ({ id: `n${i}`, sortOrder: i, labels: { nodes: [{ id: 'label' }] } })));
+  await f.guard.reconcile();
+  const s = await f.store.load(); assert.equal(s.tripped, false); assert.equal(s.baseline.length, 500);
 });
 
 test('pause/publish/resume and restart preserve intentionally accepted order', async t => {
@@ -99,10 +115,13 @@ test('dedup persists across restart and pending events recover', async t => {
   f.rows[0].sortOrder = 5000; await restarted.reconcile(); assert.ok(inOrder(f.rows));
 });
 
-test('missing/archived/moved baseline item fails closed and trips after three failures', async t => {
-  const f = await fixture(t); f.rows.pop();
+test('archived or moved-out issues leave the protected set; a missing rank fails closed', async t => {
+  const f = await fixture(t); f.rows.pop(); f.rows[0].archivedAt = '2026-01-01T00:00:00.000Z';
+  await f.guard.reconcile();
+  let s = await f.store.load(); assert.deepEqual(s.baseline.map(x => x.id), ['b']); assert.equal(s.failures, 0);
+  f.rows[1].sortOrder = null;
   for (let i = 0; i < 4; i++) await f.guard.reconcile();
-  const s = await f.store.load(); assert.equal(s.tripped, true); assert.equal(s.failures, 3); assert.equal(f.calls.length, 0);
+  s = await f.store.load(); assert.equal(s.tripped, true); assert.equal(s.failures, 3); assert.equal(f.calls.length, 0);
   await assert.rejects(f.guard.control('resume'));
 });
 
@@ -115,7 +134,8 @@ test('issue moved out of the team between repairs is not written from the prior 
   };
   await f.guard.reconcile();
   assert.equal(f.calls.length, 1);
-  assert.equal((await f.store.load()).failures, 1);
+  const s = await f.store.load(); assert.equal(s.failures, 0); assert.equal(s.pending, true);
+  await f.guard.reconcile(); assert.ok(inOrder(f.rows));
 });
 
 test('API failures retry a bounded number of sweeps', async t => {
@@ -123,6 +143,40 @@ test('API failures retry a bounded number of sweeps', async t => {
   f.api.issues = async () => { reads++; throw new Error('mock outage'); };
   for (let i = 0; i < 5; i++) await f.guard.reconcile();
   assert.equal(reads, 3); assert.equal((await f.store.load()).tripped, true);
+});
+
+test('a tripped breaker retries on its own after ten minutes against the last approved order', async t => {
+  const f = await fixture(t); let now = Date.now(), fail = true;
+  f.guard.clock = () => now;
+  const issues = f.api.issues;
+  f.api.issues = async () => { if (fail) throw new Error('mock outage'); return issues(); };
+  for (let i = 0; i < 3; i++) await f.guard.reconcile();
+  assert.equal((await f.store.load()).tripped, true);
+  fail = false; f.rows[0].sortOrder = 5000;
+  now += 599999; await f.guard.reconcile(); assert.equal(f.calls.length, 0);
+  now += 1; await f.guard.reconcile();
+  const s = await f.store.load(); assert.equal(s.tripped, false); assert.equal(s.failures, 0);
+  assert.ok(inOrder(f.rows)); assert.deepEqual(s.baseline.map(x => x.id), ['a', 'b', 'c']);
+  assert.match(await readFile(join(f.cfg.dir, 'audit.jsonl'), 'utf8'), /"breaker-retry"/);
+});
+
+test('a new team needs no CLI: the first check adopts the labeled order; old unpublished state starts too', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'guardrail-new-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const cfg = { dir, team: 'test-team', label: 'label', dry: false, secret: 'mock-secret' };
+  const rows = ['x', 'y'].map((id, i) => ({ id, sortOrder: (2 - i) * 1024, labels: { nodes: [{ id: 'label' }] } }));
+  const api = { team: async () => {}, issues: async () => structuredClone(rows), update: async () => { throw new Error('no writes'); } };
+  const guard = new Guardrail(cfg, api, new Store(cfg));
+  assert.equal((await guard.control('status')).paused, false);
+  await guard.reconcile();
+  assert.deepEqual((await guard.control('status')).baseline.map(x => x.id), ['y', 'x']);
+  // State written by older versions, which waited paused for a first publish.
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ version: 1, team: 'test-team', label: 'label', paused: true,
+    baseline: [], seen: [], pending: false, failures: 0, tripped: false }));
+  await guard.reconcile();
+  const s = await guard.control('status'); assert.equal(s.paused, false); assert.equal(s.protectedCount, 2);
+  // An explicit pause still holds.
+  await guard.control('pause'); assert.equal((await guard.control('status')).paused, true);
 });
 
 test('adversarial concurrent writer trips mutation budget', async t => {
@@ -184,18 +238,17 @@ async function teams(t) {
   const dir = await mkdtemp(join(tmpdir(), 'guardrail-teams-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const cfg = config({ PROTECTED_TEAMS: 'team-a:label-a,team-b:label-b', LINEAR_API_KEY: 'key', WEBHOOK_SECRET: 'mock-secret',
-    DRY_RUN: 'false', STATE_DIR: dir });
+    DRY_RUN: 'false', ROLE_APPROVALS: 'false', STATE_DIR: dir });
   const rows = {}, calls = { 'team-a': [], 'team-b': [] };
   for (const { team, label } of cfg.teams) {
     rows[team] = ['1', '2', '3'].map((n, i) => ({ id: `${team}-${n}`, sortOrder: i * 1024, labels: { nodes: [{ id: label }] } }));
   }
   const makeApi = c => ({ team: async () => {}, issues: async () => structuredClone(rows[c.team]),
     update: async (id, sortOrder) => { calls[c.team].push({ id, sortOrder }); rows[c.team].find(r => r.id === id).sortOrder = sortOrder; } });
-  const env = { PROTECTED_TEAMS: 'team-a:label-a,team-b:label-b', LINEAR_API_KEY: 'key', WEBHOOK_SECRET: 'mock-secret', DRY_RUN: 'false', STATE_DIR: dir };
+  const env = { PROTECTED_TEAMS: 'team-a:label-a,team-b:label-b', LINEAR_API_KEY: 'key', WEBHOOK_SECRET: 'mock-secret', DRY_RUN: 'false', ROLE_APPROVALS: 'false', STATE_DIR: dir };
   const cli = (...argv) => run(argv, env, makeApi);
   const [a, b] = guards(cfg, makeApi);
-  await cli('publish', '--team', 'team-a'); await cli('resume', '--team', 'team-a');
-  await cli('publish', '--team', 'team-b'); await cli('resume', '--team', 'team-b');
+  await a.reconcile(); await b.reconcile();
   return { dir, rows, calls, a, b, cli };
 }
 
@@ -206,7 +259,7 @@ test('multiple teams: each team keeps its own state directory, baseline and labe
     ['team-a', 'label-a', false, ['team-a-1', 'team-a-2', 'team-a-3']],
     ['team-b', 'label-b', false, ['team-b-1', 'team-b-2', 'team-b-3']]]);
   assert.equal((await f.cli('status', '--team', 'team-b')).team, 'team-b');
-  assert.match(await readFile(join(f.dir, 'team-a', 'audit.jsonl'), 'utf8'), /"publish"/);
+  assert.match(await readFile(join(f.dir, 'team-a', 'audit.jsonl'), 'utf8'), /"membership"/);
   assert.match(await readFile(join(f.dir, 'team-b', 'state.json'), 'utf8'), /"label-b"/);
 });
 
@@ -219,7 +272,7 @@ test('multiple teams: drift is repaired only in its own team; pause and breaker 
   assert.ok(inOrder(f.rows['team-a'])); assert.ok(f.calls['team-a'].length > 0);
   assert.equal(f.calls['team-b'].length, 0); assert.ok(!inOrder(f.rows['team-b']));
   // A failing team trips only its own breaker.
-  f.rows['team-a'].pop();
+  f.rows['team-a'][0].sortOrder = null;
   for (let i = 0; i < 3; i++) await f.a.reconcile();
   await f.cli('publish', '--team', 'team-b'); await f.cli('resume', '--team', 'team-b');
   f.rows['team-b'][1].sortOrder = 9000; await f.b.reconcile();
