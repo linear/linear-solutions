@@ -96,7 +96,7 @@ async function fixture(t, { approvals = true, dry = false, graceMs = 0 } = {}) {
   };
   const clock = () => now;
   const guard = new Guardrail(cfg, api, new Store(cfg), clock);
-  await guard.control('publish'); await guard.control('resume');
+  await guard.reconcile();
   const deliver = (body, g = guard) => g.accept(body, undefined, randomUUID());
   const user = id => ({ id, type: 'user' });
   return { cfg, rows, calls, own, lookups, api, guard, clock, change, deliver, user,
@@ -271,7 +271,7 @@ test('several admin moves, including chained moves of one issue, are approved to
   assert.equal((await f.store.load()).candidates.length, 0);
 });
 
-test('approvals are opt-in: default config repairs admin moves and keeps no approval evidence', async t => {
+test('ROLE_APPROVALS=false repairs admin moves and keeps no approval evidence', async t => {
   const f = await fixture(t, { approvals: false });
   await f.deliver(f.change('c', { sortOrder: -1024 }, f.user('owner')));
   await f.guard.reconcile();

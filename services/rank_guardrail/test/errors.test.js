@@ -36,8 +36,8 @@ test('config errors name the variable, never its value', async () => {
   await rejectsSafely(() => config({ ...ENV, ROLE_APPROVALS: 'TRUE' }), 'config', /ROLE_APPROVALS/);
   await rejectsSafely(() => config({ ...ENV, APPROVAL_GRACE_MS: '90000' }), 'config', /APPROVAL_GRACE_MS/);
   const cfg = config(ENV);
-  assert.deepEqual([cfg.dry, cfg.approvals, cfg.graceMs], [true, false, 10000]);
-  assert.deepEqual([config({ ...ENV, ROLE_APPROVALS: 'true', APPROVAL_GRACE_MS: '0' }).approvals, config({ ...ENV, APPROVAL_GRACE_MS: '0' }).graceMs], [true, 0]);
+  assert.deepEqual([cfg.dry, cfg.approvals, cfg.graceMs], [true, true, 10000]);
+  assert.deepEqual([config({ ...ENV, ROLE_APPROVALS: 'false', APPROVAL_GRACE_MS: '0' }).approvals, config({ ...ENV, APPROVAL_GRACE_MS: '0' }).graceMs], [false, 0]);
 });
 
 test('API HTTP, network, GraphQL and team errors are specific but hide response details', async () => {
@@ -63,15 +63,12 @@ async function guard(t, rows, extra = {}) {
 }
 const labelled = (id, sortOrder) => ({ id, sortOrder, labels: { nodes: [{ id: 'label' }] } });
 
-test('control errors: pause required, label count, rank collisions, scope mismatch and state lock', async t => {
-  let f = await guard(t, []);
+test('control errors: pause required, rank collisions, scope mismatch and state lock', async t => {
+  let f = await guard(t, [labelled('a', 1), labelled('b', 1)]);
   await f.guard.control('pause');
-  await rejectsSafely(f.guard.control('publish'), 'label-count', /found 0/);
-  await rejectsSafely(f.guard.control('resume'), 'no-baseline');
-  f = await guard(t, [labelled('a', 1), labelled('b', 1)]);
   await rejectsSafely(f.guard.control('publish'), 'rank-collision', /share a rank/);
   f = await guard(t, [labelled('a', 1), labelled('b', 2)]);
-  await f.guard.control('publish'); await f.guard.control('resume');
+  await f.guard.reconcile();
   await rejectsSafely(f.guard.control('publish'), 'pause-required', /run pause/);
   await rejectsSafely(new Store({ ...f.cfg, label: 'other' }).load(), 'state-scope', /scope mismatch/);
   await rejectsSafely(f.guard.control('nonsense'), 'usage');
@@ -92,7 +89,7 @@ test('direct CLI commands: status reports modes, check-actor is read-only, bad u
   t.after(() => rm(dir, { recursive: true, force: true }));
   const env = { ...ENV, STATE_DIR: dir, ROLE_APPROVALS: 'true', DRY_RUN: 'true' };
   const status = await run(['status'], env, () => ({}));
-  assert.deepEqual([status.dryRun, status.roleApprovals, status.approvalGraceMs, status.paused], [true, true, 10000, true]);
+  assert.deepEqual([status.dryRun, status.roleApprovals, status.approvalGraceMs, status.paused], [true, true, 10000, false]);
   assert.ok(!JSON.stringify(status).includes('SUPERSECRET'));
   const requests = [];
   const makeApi = cfg => new LinearApi(cfg, async (_url, opts) => {

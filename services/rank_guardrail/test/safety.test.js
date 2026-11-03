@@ -13,7 +13,7 @@ async function setup(t) {
   let writes = 0;
   const api = { team: async () => {}, issues: async () => structuredClone(rows), update: async (id, rank) => { writes++; rows.find(r => r.id === id).sortOrder = rank; } };
   const store = new Store(cfg), guard = new Guardrail(cfg, api, store);
-  await guard.control('publish');
+  await guard.reconcile(); await guard.control('pause');
   return { cfg, rows, api, store, guard, writes: () => writes };
 }
 
