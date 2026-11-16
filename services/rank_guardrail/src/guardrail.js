@@ -10,6 +10,12 @@ const INTENT_TTL_MS = 600000;
 const MAX_CANDIDATES = 200;
 const MAX_CHAIN = 20;
 const BREAKER_COOLDOWN_MS = 600000;
+const SWEEP_WRITES = 3;
+const WINDOW_WRITES = 10;
+const WINDOW_MS = 600000;
+const RANK_STEP = 1024;
+// Fields whose change alongside a rank change means the update was not a pure reorder.
+const NON_REORDER_FIELDS = ['stateId', 'cycleId'];
 
 // PROTECTED_TEAMS lists one team-UUID:label-UUID pair per protected team, comma-separated.
 export function config(env = process.env) {
@@ -218,21 +224,64 @@ export function inOrder(rows) {
   return rows.every((r, i) => !i || rows[i - 1].sortOrder < r.sortOrder);
 }
 
-// Re-space only the protected subset. Snapshot numbers are evidence, not immutable ranks.
-export function plan(rows) {
-  if (inOrder(rows)) return [];
-  const ranks = rows.map(r => r.sortOrder);
-  const min = Math.min(...ranks), max = Math.max(...ranks);
-  const step = Math.max(1024, (max - min) / Math.max(1, rows.length - 1));
-  const result = rows.map((r, i) => ({ id: r.id, sortOrder: min + i * step }));
-  if (result.some((r, i) => !Number.isFinite(r.sortOrder) || (i && r.sortOrder <= result[i - 1].sortOrder))) {
-    fail('rank-unrepresentable', 'Cannot safely represent ranks');
+// Which protected rows can stay where they are: the longest run of rows, in approved order, whose
+// current ranks already increase. Among equally long runs, prefer rows still at their trusted
+// anchor, so the issues someone actually moved are the ones put back. O(n log n).
+function keepers(rows, anchors) {
+  const n = rows.length;
+  const values = [...new Set(rows.map(r => r.sortOrder))].sort((a, b) => a - b);
+  const slot = new Map(values.map((v, i) => [v, i + 1]));
+  const tree = new Array(values.length + 1).fill(-1), score = new Array(n), prev = new Array(n);
+  const better = (i, j) => j < 0 || score[i] > score[j];
+  let end = -1;
+  for (let i = 0; i < n; i++) {
+    let best = -1;
+    for (let p = slot.get(rows[i].sortOrder) - 1; p > 0; p -= p & -p) if (tree[p] >= 0 && (best < 0 || score[tree[p]] > score[best])) best = tree[p];
+    score[i] = (best < 0 ? 0 : score[best]) + n + 1 + (anchors.get(rows[i].id) === rows[i].sortOrder ? 1 : 0);
+    prev[i] = best;
+    for (let p = slot.get(rows[i].sortOrder); p <= values.length; p += p & -p) if (better(i, tree[p])) tree[p] = i;
+    if (better(i, end)) end = i;
   }
-  return result;
+  const keep = new Array(n).fill(false);
+  for (let i = end; i >= 0; i = prev[i]) keep[i] = true;
+  return keep;
+}
+
+// Ranks for a run of displaced rows between two kept neighbours (null at either end). Reuse the
+// rows' trusted anchors when they still fit, which restores a reverted drag exactly.
+function place(run, lo, hi, anchors) {
+  const fits = ranks => ranks.every((r, k) => Number.isFinite(r) && (lo === null || r > lo) && (hi === null || r < hi) && (!k || r > ranks[k - 1]));
+  let ranks = run.map(r => anchors.get(r.id));
+  if (!fits(ranks)) {
+    if (lo !== null && hi !== null) ranks = run.map((_, k) => lo + (hi - lo) * (k + 1) / (run.length + 1));
+    else if (lo !== null) ranks = run.map((_, k) => lo + RANK_STEP * (k + 1));
+    else ranks = run.map((_, k) => hi - RANK_STEP * (run.length - k));
+  }
+  if (!fits(ranks)) fail('rank-unrepresentable', 'Cannot safely represent ranks');
+  return run.map((r, k) => ({ id: r.id, sortOrder: ranks[k] }));
+}
+
+// Minimal-movement repair of the protected subset: rows that are already in approved relative
+// order keep their ranks, and only the displaced rows get new ranks between their kept
+// neighbours. Returns only the writes needed. Snapshot numbers are evidence, not immutable ranks.
+export function plan(rows, anchors = new Map()) {
+  if (inOrder(rows)) return [];
+  const keep = keepers(rows, anchors), repairs = [];
+  for (let i = 0; i < rows.length;) {
+    if (keep[i]) { i++; continue; }
+    let j = i;
+    while (j < rows.length && !keep[j]) j++;
+    const lo = i > 0 ? rows[i - 1].sortOrder : null, hi = j < rows.length ? rows[j].sortOrder : null;
+    repairs.push(...place(rows.slice(i, j), lo, hi, anchors).filter((r, k) => r.sortOrder !== rows[i + k].sortOrder));
+    i = j;
+  }
+  return repairs;
 }
 
 // A signed Issue update that changed sortOrder, reduced to the fields needed for approval.
 // Status/cycle/assignee-only updates carry no updatedFrom.sortOrder and are never candidates.
+// A rank change combined with a status or cycle change is recorded as `mixed`: it explains the
+// rank but can never approve it, so the status/cycle change stays and the order is repaired.
 export function candidateFrom(body, team, receivedAt) {
   if (body?.type !== 'Issue' || body.action !== 'update') return null;
   const from = body.updatedFrom?.sortOrder, to = body.data?.sortOrder;
@@ -241,7 +290,8 @@ export function candidateFrom(body, team, receivedAt) {
   if (typeof id !== 'string' || !ID.test(id) || teamId !== team) return null;
   if (typeof updatedAt !== 'string' || !Number.isFinite(Date.parse(updatedAt))) return null;
   const actorId = typeof body.actor?.id === 'string' && ID.test(body.actor.id) ? body.actor.id : null;
-  return { id, from, to, updatedAt, actorType: actorType(body.actor), actorId,
+  const mixed = NON_REORDER_FIELDS.filter(f => Object.hasOwn(body.updatedFrom, f));
+  return { id, from, to, updatedAt, actorType: actorType(body.actor), actorId, mixed,
     webhookTimestamp: body.webhookTimestamp, receivedAt };
 }
 
@@ -373,6 +423,11 @@ export class Guardrail {
     const decisions = new Map(), approved = [], denied = [];
     for (const { row, links } of chains) {
       for (const link of links) {
+        // Only pure reorders approve; a drag that also changed status or cycle is never approval.
+        if (link.mixed?.length) {
+          denied.push({ id: row.id, actorId: link.actorId, reason: 'combined-status-or-cycle-change', fields: link.mixed });
+          continue;
+        }
         const key = `${link.actorType}:${link.actorId}`;
         if (!decisions.has(key)) {
           const user = link.actorType === 'user' && link.actorId ? await this.api.user(link.actorId) : null;
@@ -383,7 +438,8 @@ export class Guardrail {
       }
     }
     if (denied.length) {
-      await this.store.audit('approval-rejected', { reason: 'unauthorized-actor', denied });
+      const reason = denied.some(d => d.fields) ? 'combined-status-or-cycle-change' : 'unauthorized-actor';
+      await this.store.audit('approval-rejected', { reason, denied });
       return 'rejected';
     }
     const sequence = ordered(rows);
@@ -415,7 +471,7 @@ export class Guardrail {
       try {
         await this.api.team();
         prune(s, this.clock());
-        let writes = 0, repairs = null, observed = null;
+        let writes = 0, repairs = null, targets = null, observed = null;
         for (let pass = 0; pass < 3; pass++) {
           const { rows, changed } = await this.members(s);
           // A label change after one of this sweep's writes invalidates the plan: re-plan next sweep.
@@ -428,26 +484,38 @@ export class Guardrail {
             const outcome = await this.review(s, rows);
             if (outcome !== 'rejected') { await this.store.save(s); return; }
           }
-          // Keep one plan per sweep so partial progress converges instead of re-spacing around its
+          // Keep one plan per sweep so partial progress converges instead of re-planning around its
           // own writes. Any rank that is neither as first read nor as planned is a concurrent edit:
           // re-plan from this fresh read rather than continue with a stale plan.
-          if (!repairs || rows.some((r, i) => r.sortOrder !== observed[i] && r.sortOrder !== repairs[i].sortOrder)) {
-            repairs = plan(rows); observed = rows.map(r => r.sortOrder);
+          if (!repairs || rows.some(r => r.sortOrder !== observed.get(r.id) && r.sortOrder !== targets.get(r.id))) {
+            repairs = plan(rows, new Map(s.baseline.map(b => [b.id, b.sortOrder])));
+            targets = new Map(repairs.map(r => [r.id, r.sortOrder]));
+            observed = new Map(rows.map(r => [r.id, r.sortOrder]));
           }
           if (this.cfg.dry) {
             await this.store.audit('would-repair', { repairs });
             s.pending = false; await this.store.save(s); return;
           }
           // One write per fresh read: never replay stale webhook values or an old repair plan.
-          const repair = repairs.find((r, i) => r.sortOrder !== rows[i].sortOrder);
-          if (!repair || writes >= 3) break;
-          s.repairHistory = (s.repairHistory || []).filter(at => at > Date.now() - 600000);
-          if (s.repairHistory.length >= 10) {
+          const current = new Map(rows.map(r => [r.id, r.sortOrder]));
+          const remaining = repairs.filter(r => current.get(r.id) !== r.sortOrder);
+          if (!remaining.length) break;
+          // Never start a repair the budgets cannot finish: a partial repair leaves an order that is
+          // neither the approved one nor the one someone chose. Large drift needs explicit review.
+          if (remaining.length > SWEEP_WRITES - writes) {
+            if (writes) break;
             this.trip(s);
-            await this.store.audit('breaker', { reason: 'ten-write-ten-minute-budget' });
+            await this.store.audit('breaker', { reason: 'repair-too-large', needed: remaining.length, ids: remaining.map(r => r.id) });
             await this.store.save(s); return;
           }
-          s.repairHistory.push(Date.now());
+          s.repairHistory = (s.repairHistory || []).filter(at => at > this.clock() - WINDOW_MS);
+          if (s.repairHistory.length + remaining.length > WINDOW_WRITES) {
+            this.trip(s);
+            await this.store.audit('breaker', { reason: 'ten-write-ten-minute-budget', needed: remaining.length });
+            await this.store.save(s); return;
+          }
+          const repair = remaining[0];
+          s.repairHistory.push(this.clock());
           // Persist intent/budget before the network call: restarting cannot reset the rate budget,
           // and the resulting webhook callback is recognised as our own write, never an approval.
           s.intents = [...s.intents, { id: repair.id, sortOrder: repair.sortOrder, at: this.clock() }].slice(-100);
@@ -455,7 +523,7 @@ export class Guardrail {
           await this.store.save(s);
           await this.api.update(repair.id, repair.sortOrder); writes++;
         }
-        // A maximum of three mutations per sweep; large drift requires explicit review, not a loop.
+        // A maximum of SWEEP_WRITES mutations per sweep; a fight that outlasts them trips the breaker.
         const { rows } = await this.members(s);
         if (!inOrder(rows)) {
           this.trip(s); await this.store.audit('breaker', { reason: 'repair-budget', writes });
@@ -477,7 +545,11 @@ export class Guardrail {
   }
   trip(s) { s.tripped = true; s.trippedAt = this.clock(); }
   // Fresh ranks in the approved relative order become the trusted anchors for later approvals.
+  // Webhook evidence for updates the fresh read already reflects is history: repairs can return an
+  // issue to an earlier rank, and old events must not be matched against it again.
   settle(s, rows) {
+    const fresh = new Map(rows.map(r => [r.id, Date.parse(r.updatedAt)]));
+    s.candidates = s.candidates.filter(c => !(Date.parse(c.updatedAt) <= fresh.get(c.id)));
     s.baseline = rows.map(({ id, sortOrder }) => ({ id, sortOrder }));
     s.pending = false; s.failures = 0; s.driftSince = null;
   }

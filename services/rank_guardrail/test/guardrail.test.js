@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createHmac } from 'node:crypto';
 import { config, teamConfig, verify, Store, Guardrail, LinearApi, plan, inOrder } from '../src/guardrail.js';
 import { server, guards, run } from '../src/cli.js';
@@ -30,9 +30,11 @@ test('protected teams are explicit team:label pairs and dry-run fails closed', (
   assert.equal(config(env).key, 'Bearer key');
   assert.equal(config({ ...env, LINEAR_API_KEY: 'Bearer key' }).key, 'Bearer key');
   assert.equal(config({ ...env, LINEAR_API_KEY: 'lin_api_key' }).key, 'lin_api_key');
-  const cfg = config({ ...env, PROTECTED_TEAMS: ' t1:l1, t2 : l1 ,t3:l3', STATE_DIR: '/tmp/rank-state' });
+  // Portable: no hardcoded POSIX path, so the expectation holds on Windows as well.
+  const stateDir = join(tmpdir(), 'rank-state');
+  const cfg = config({ ...env, PROTECTED_TEAMS: ' t1:l1, t2 : l1 ,t3:l3', STATE_DIR: stateDir });
   assert.deepEqual(cfg.teams, [{ team: 't1', label: 'l1' }, { team: 't2', label: 'l1' }, { team: 't3', label: 'l3' }]);
-  assert.deepEqual(teamConfig(cfg, cfg.teams[1]), { ...cfg, team: 't2', label: 'l1', dir: '/tmp/rank-state/t2' });
+  assert.deepEqual(teamConfig(cfg, cfg.teams[1]), { ...cfg, team: 't2', label: 'l1', dir: join(resolve(stateDir), 't2') });
   for (const PROTECTED_TEAMS of ['t', 't:', ':l', 't:l:x', 't:l,', 't:l,t:other', '../x:l']) {
     assert.throws(() => config({ ...env, PROTECTED_TEAMS }), PROTECTED_TEAMS);
   }
@@ -202,9 +204,134 @@ test('same-state CLI pause waits for ongoing repair and prevents subsequent writ
   assert.equal(f.calls.length, count);
 });
 
-test('numeric collision repaired and unsafe floating point fails closed', () => {
-  assert.ok(inOrder(plan([{ id: 'a', sortOrder: 1 }, { id: 'b', sortOrder: 1 }])));
-  assert.throws(() => plan([{ id: 'a', sortOrder: 1e308 }, { id: 'b', sortOrder: 1e308 }]));
+// Rows in approved order with the given current ranks; anchors are the ranks before the drift.
+const rowsOf = ranks => ranks.map((sortOrder, i) => ({ id: `i${String(i).padStart(2, '0')}`, sortOrder }));
+const anchorsOf = ranks => new Map(ranks.map((r, i) => [`i${String(i).padStart(2, '0')}`, r]));
+const apply = (rows, repairs) => rows.map(r => ({ ...r, sortOrder: repairs.find(x => x.id === r.id)?.sortOrder ?? r.sortOrder }));
+const spaced = n => Array.from({ length: n }, (_, i) => i * 1024);
+
+test('numeric collision repaired with one write and unsafe floating point fails closed', () => {
+  const tie = [{ id: 'a', sortOrder: 1 }, { id: 'b', sortOrder: 1 }];
+  assert.equal(plan(tie).length, 1); assert.ok(inOrder(apply(tie, plan(tie))));
+  assert.throws(() => plan([{ id: 'a', sortOrder: 1e308 }, { id: 'b', sortOrder: 1e308 }]), e => e.code === 'rank-unrepresentable');
+  // No representable rank strictly between two adjacent doubles.
+  const tight = [{ id: 'a', sortOrder: 1 }, { id: 'b', sortOrder: 5 }, { id: 'c', sortOrder: 1 + Number.EPSILON }];
+  assert.throws(() => plan(tight, new Map([['a', 1], ['b', 0], ['c', 1 + Number.EPSILON]])), e => e.code === 'rank-unrepresentable');
+});
+
+test('minimal-movement plan: one drag among 19+ issues is one write back to its anchor', () => {
+  for (const n of [19, 25, 60]) {
+    const anchors = spaced(n);
+    for (const [from, to] of [[n - 4, 0], [2, n - 1], [5, 11], [0, n - 1], [n - 1, 0]]) {
+      // Drag issue `from` to sit just before or after the issue at `to`.
+      const ranks = [...anchors];
+      ranks[from] = to === 0 ? anchors[0] - 1024 : to === n - 1 ? anchors[n - 1] + 1024 : anchors[to] + 512;
+      const rows = rowsOf(ranks), repairs = plan(rows, anchorsOf(anchors));
+      assert.deepEqual(repairs, [{ id: rows[from].id, sortOrder: anchors[from] }], `${n}: ${from}->${to}`);
+      assert.ok(inOrder(apply(rows, repairs)));
+    }
+  }
+});
+
+test('minimal-movement plan: small sets, rotations and rank edges', () => {
+  const cases = [
+    // [current ranks, anchors, expected write count]
+    [[1024, 0], [0, 1024], 1], // two-issue swap
+    [[0, 2048, 1024], [0, 1024, 2048], 1], // adjacent swap at the tail
+    [[1024, 2048, 0], [0, 1024, 2048], 1], // rotation: last dragged to the top
+    [[-5000, -4000, -6000], [-6000, -5000, -4000], 1], // negative ranks
+    [[0, 0, 0], [0, 0, 0], 2], // full collision
+    [[3000, 1024, 2048], [0, 1024, 2048], 1], // head moved, anchor still fits
+    [[3000, -2048, -1024], [0, 1024, 2048], 1], // head moved, neighbours re-ranked: anchor no longer fits
+    [[0, 1024, -1], [0, 1024, 2048], 1], // tail moved below everything
+    [[0, 10, 5, 1024], [0, 512, 1, 1024], 1], // tight gap: midpoint between kept neighbours
+    [[4096, 3072, 2048, 1024, 0], spaced(5), 4], // full reversal
+  ];
+  for (const [ranks, anchors, writes] of cases) {
+    const rows = rowsOf(ranks), repairs = plan(rows, anchorsOf(anchors));
+    assert.equal(repairs.length, writes, JSON.stringify(ranks));
+    assert.ok(inOrder(apply(rows, repairs)), JSON.stringify(ranks));
+    // Kept issues are never written.
+    assert.ok(repairs.every(r => rows.find(x => x.id === r.id).sortOrder !== r.sortOrder));
+  }
+  // Ambiguous swap where Linear re-ranked both issues: either is a valid single write.
+  const both = rowsOf([2000, 1000]);
+  assert.equal(plan(both, anchorsOf([0, 1024])).length, 1);
+  assert.ok(inOrder(apply(both, plan(both, anchorsOf([0, 1024])))));
+  assert.deepEqual(plan(rowsOf(spaced(19)), anchorsOf(spaced(19))), []);
+});
+
+// A team with n protected issues, a controllable clock, and an API that applies writes.
+async function large(t, n) {
+  const dir = await mkdtemp(join(tmpdir(), 'guardrail-large-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const cfg = { dir, team: 'test-team', label: 'label', dry: false, secret: 'mock-secret' };
+  const rows = rowsOf(spaced(n)).map(r => ({ ...r, labels: { nodes: [{ id: 'label' }] }, status: 'Todo' }));
+  rows.push({ id: 'unlabeled', sortOrder: 512, labels: { nodes: [] } });
+  const calls = [];
+  const api = { team: async () => {}, issues: async () => structuredClone(rows),
+    update: async (id, sortOrder) => { calls.push({ id, sortOrder }); rows.find(r => r.id === id).sortOrder = sortOrder; } };
+  let now = Date.now();
+  const guard = new Guardrail(cfg, api, new Store(cfg), () => now);
+  await guard.reconcile();
+  const ids = () => rows.filter(r => r.labels.nodes.length).toSorted((x, y) => x.sortOrder - y.sortOrder).map(r => r.id);
+  const drag = (i, sortOrder) => { rows.find(r => r.id === `i${String(i).padStart(2, '0')}`).sortOrder = sortOrder; };
+  const audit = async () => (await readFile(join(dir, 'audit.jsonl'), 'utf8')).trim().split('\n').map(l => JSON.parse(l));
+  return { cfg, rows, calls, guard, ids, drag, audit, original: ids(), advance: ms => { now += ms; },
+    state: () => new Store(cfg).load() };
+}
+
+test('19 labeled issues: a single drag is repaired with one write and the right order', async t => {
+  const f = await large(t, 19);
+  const ranks = new Map(f.rows.map(r => [r.id, r.sortOrder]));
+  f.drag(15, -1024); // Drag the 16th issue to the top.
+  await f.guard.reconcile();
+  assert.deepEqual(f.calls, [{ id: 'i15', sortOrder: 15 * 1024 }]);
+  assert.deepEqual(f.ids(), f.original);
+  // Every other issue, protected or not, keeps its rank.
+  assert.ok(f.rows.every(r => r.sortOrder === ranks.get(r.id)));
+  const s = await f.state(); assert.equal(s.tripped, false); assert.equal(s.repairHistory.length, 1);
+});
+
+test('19 labeled issues: repeated drags cost one write each until the 10-minute budget', async t => {
+  const f = await large(t, 19);
+  for (let i = 0; i < 10; i++) {
+    f.drag(i % 2 ? 3 : 17, i % 2 ? 99999 : -99999);
+    await f.guard.reconcile();
+    assert.equal(f.calls.length, i + 1, `drag ${i + 1}`);
+    assert.deepEqual(f.ids(), f.original);
+    assert.equal((await f.state()).tripped, false);
+    f.advance(30000);
+  }
+  // An eleventh drag inside the same ten minutes trips the budget before any write.
+  f.drag(8, -99999);
+  await f.guard.reconcile();
+  assert.equal(f.calls.length, 10);
+  const s = await f.state(); assert.equal(s.tripped, true);
+  assert.ok((await f.audit()).some(e => e.event === 'breaker' && e.reason === 'ten-write-ten-minute-budget'));
+  // Once the window has passed, the breaker retry repairs it with one write.
+  f.advance(600000); await f.guard.reconcile();
+  assert.equal(f.calls.length, 11); assert.deepEqual(f.ids(), f.original);
+});
+
+test('a repair that needs more writes than one sweep allows is not started', async t => {
+  const f = await large(t, 19);
+  const ranks = f.rows.map(r => r.sortOrder);
+  for (const i of [2, 6, 10, 14]) f.drag(i, -5000 - i); // Four independent displacements.
+  const before = f.rows.map(r => r.sortOrder);
+  await f.guard.reconcile();
+  assert.equal(f.calls.length, 0, 'no partial repair');
+  assert.deepEqual(f.rows.map(r => r.sortOrder), before);
+  const s = await f.state(); assert.equal(s.tripped, true); assert.deepEqual(s.repairHistory ?? [], []);
+  const trip = (await f.audit()).find(e => e.event === 'breaker');
+  assert.equal(trip.reason, 'repair-too-large'); assert.equal(trip.needed, 4);
+  assert.deepEqual((await f.state()).baseline.map(b => b.sortOrder), ranks.slice(0, 19));
+  // Three displacements fit in one sweep.
+  const g = await large(t, 19);
+  for (const i of [2, 6, 10]) g.drag(i, -5000 - i);
+  await g.guard.reconcile();
+  assert.equal(g.calls.length, 3); assert.deepEqual(g.ids(), g.original);
+  assert.equal((await g.state()).tripped, false);
 });
 
 test('API paginates and only ever sends sortOrder as mutation input', async () => {

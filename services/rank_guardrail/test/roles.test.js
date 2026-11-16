@@ -165,18 +165,53 @@ test('cycle-only change is neither a violation nor an approval', async t => {
   assert.ok(!(await f.audit()).some(e => /approval|repair/.test(e.event)));
 });
 
-test('combined rank and status changes: admin approved, non-admin repaired; only sortOrder is written', async t => {
+test('combined rank and status or cycle changes never approve: the status or cycle change stays, the order is restored', async t => {
+  for (const fields of [{ stateId: 'in-progress' }, { cycleId: 'cycle-2' }, { stateId: 'done', cycleId: 'cycle-3', assigneeId: 'someone' }]) {
+    for (const actor of ['admin', 'owner', 'teamOwner', 'member']) {
+      const f = await fixture(t);
+      await f.deliver(f.change('c', { sortOrder: -1024, ...fields }, f.user(actor)));
+      await f.guard.reconcile();
+      const label = `${actor} ${JSON.stringify(fields)}`;
+      assert.deepEqual(f.ids(), ['a', 'b', 'c'], label);
+      assert.deepEqual(await baselineIds(f), ['a', 'b', 'c'], label);
+      // One write, rank only, back to the issue's previous rank.
+      assert.deepEqual(f.calls, [{ id: 'c', sortOrder: 2048 }], label);
+      const c = f.rows.find(r => r.id === 'c');
+      assert.deepEqual([c.stateId, c.cycleId, c.assigneeId], [fields.stateId ?? 'todo', fields.cycleId ?? 'cycle-1', fields.assigneeId ?? 'person'], label);
+      const rejection = (await f.audit()).find(e => e.event === 'approval-rejected');
+      assert.equal(rejection.reason, 'combined-status-or-cycle-change', label);
+      assert.deepEqual(rejection.denied[0].fields, ['stateId', 'cycleId'].filter(k => k in fields), label);
+      assert.ok(!(await f.audit()).some(e => e.event === 'approved-move'), label);
+    }
+  }
+});
+
+test('a combined status and rank change that keeps the protected order needs no repair', async t => {
   const f = await fixture(t);
-  await f.deliver(f.change('c', { sortOrder: -1024, stateId: 'in-progress', cycleId: 'cycle-2' }, f.user('admin')));
+  await f.deliver(f.change('b', { sortOrder: 1500, stateId: 'done' }, f.user('member')));
+  await f.guard.reconcile();
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual(await baselineIds(f), ['a', 'b', 'c']);
+  assert.equal(f.rows.find(r => r.id === 'b').stateId, 'done');
+});
+
+test('pure admin reorders are still approved; one combined move in the same batch rejects the batch', async t => {
+  let f = await fixture(t);
+  await f.deliver(f.change('c', { sortOrder: -1024 }, f.user('admin')));
   await f.guard.reconcile();
   assert.equal(f.calls.length, 0); assert.deepEqual(await baselineIds(f), ['c', 'a', 'b']);
-
-  await f.deliver(f.change('a', { sortOrder: 9000, stateId: 'done', cycleId: 'cycle-3', assigneeId: 'someone' }, f.user('member')));
+  // A later combined move by the same admin is repaired to the newly approved order.
+  await f.deliver(f.change('a', { sortOrder: 9000, stateId: 'done' }, f.user('admin')));
   await f.guard.reconcile();
-  assert.deepEqual(f.ids(), ['c', 'a', 'b']);
-  assert.ok(f.calls.length > 0 && f.calls.every(c => Object.keys(c).join() === 'id,sortOrder'));
-  const a = f.rows.find(r => r.id === 'a');
-  assert.deepEqual([a.stateId, a.cycleId, a.assigneeId], ['done', 'cycle-3', 'someone']);
+  assert.deepEqual(f.ids(), ['c', 'a', 'b']); assert.deepEqual(await baselineIds(f), ['c', 'a', 'b']);
+  assert.equal(f.rows.find(r => r.id === 'a').stateId, 'done');
+
+  f = await fixture(t);
+  await f.deliver(f.change('c', { sortOrder: -1024 }, f.user('admin')));
+  await f.deliver(f.change('a', { sortOrder: 4096, cycleId: 'cycle-2' }, f.user('admin')));
+  await f.guard.reconcile();
+  assert.deepEqual(f.ids(), ['a', 'b', 'c']); assert.deepEqual(await baselineIds(f), ['a', 'b', 'c']);
+  assert.equal(f.rows.find(r => r.id === 'a').cycleId, 'cycle-2');
 });
 
 test('own repair callbacks are recognised and never approve, even though the key user is an admin', async t => {
